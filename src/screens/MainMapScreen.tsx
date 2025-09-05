@@ -18,6 +18,7 @@ import EmergencyDashboard from '../components/EmergencyDashboard';
 import EmergencyAlertBar from '../components/EmergencyAlertBar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { SERVER_CONFIG, getSocketUrl } from '../config/serverConfig';
 import { RootStackParamList } from '../types/navigation';
 import AdvancedSocketService, { ConnectionStatus, RouteCalculated, SignalCleared, ETAUpdate } from '../services/AdvancedSocketService';
 import GPSService, { LocationData, GPSStatus } from '../services/GPSService';
@@ -117,7 +118,7 @@ const MainMapScreen: React.FC<Props> = ({ navigation }) => {
 
   const initializeGPS = async () => {
     try {
-      gpsService.current.onLocationUpdate((locationData) => {
+      gpsService.current.setLocationUpdateCallback((locationData) => {
         setCurrentLocation(locationData);
         
         if (locationData.coords) {
@@ -156,24 +157,33 @@ const MainMapScreen: React.FC<Props> = ({ navigation }) => {
 
   const initializeSocket = async (ambId: string) => {
     try {
-      // Initialize socket service
-      await socketService.current.initialize('ws://10.144.117.52:3001', ambId);
+      // Initialize socket service (will fall back to offline mode if server unavailable)
+      const socketUrl = getSocketUrl();
+      if (socketUrl && !SERVER_CONFIG.OFFLINE_MODE) {
+        try {
+          await socketService.current.initialize(socketUrl, ambId);
+        } catch (error) {
+          console.warn('Socket server unavailable, continuing in offline mode:', error);
+        }
+      } else {
+        console.log('Running in offline mode - socket connection skipped');
+      }
 
       // Set up event listeners
-      socketService.current.onConnectionStatusChange(setConnectionStatus);
+      socketService.current.setOnConnectionChangeCallback(setConnectionStatus);
       
-      socketService.current.onRouteCalculated((data: RouteCalculated) => {
+      socketService.current.setOnRouteCalculatedCallback((data: RouteCalculated) => {
         console.log('Route calculated:', data);
         // Handle route data from server
       });
 
-      socketService.current.onSignalCleared((data: SignalCleared) => {
+      socketService.current.setOnSignalClearedCallback((data: SignalCleared) => {
         console.log('Signal cleared:', data);
         emergencyService.current.handleSignalCleared(data.signalId, data.clearanceDuration);
         Alert.alert('Traffic Signal Cleared', `Signal cleared for ${data.clearanceDuration}s`);
       });
 
-      socketService.current.onETAUpdate((data: ETAUpdate) => {
+      socketService.current.setOnETAUpdateCallback((data: ETAUpdate) => {
         console.log('ETA updated:', data);
         // Update navigation with new ETA
       });
@@ -233,7 +243,7 @@ const MainMapScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const cleanup = () => {
-    gpsService.current?.cleanup();
+    gpsService.current?.dispose();
     socketService.current?.disconnect();
     navigationService.current?.clearRoute();
     emergencyService.current?.cleanup();
@@ -267,7 +277,7 @@ const MainMapScreen: React.FC<Props> = ({ navigation }) => {
       }
 
       // Update socket service emergency mode
-      await socketService.current.setEmergencyMode(true);
+      socketService.current.startEmergencyLocationSync(() => currentLocation);
       
       Alert.alert('Emergency Activated', 'Emergency mode is now active. All systems engaged.');
 
@@ -280,7 +290,7 @@ const MainMapScreen: React.FC<Props> = ({ navigation }) => {
   const handleEndEmergency = async () => {
     try {
       await emergencyService.current.endEmergency('manual');
-      await socketService.current.setEmergencyMode(false);
+      socketService.current.startNormalLocationSync(() => currentLocation);
       
       // Clear navigation state
       setCurrentRoute(null);

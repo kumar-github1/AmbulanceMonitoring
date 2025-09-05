@@ -186,9 +186,9 @@ export default class AdvancedSocketService {
       
       this.socket = io(this.serverUrl, {
         transports: ['websocket', 'polling'],
-        timeout: 10000,
+        timeout: 5000,
         reconnection: true,
-        reconnectionAttempts: 10,
+        reconnectionAttempts: 3,
         reconnectionDelay: this.RECONNECT_DELAYS[0],
         reconnectionDelayMax: 30000,
         maxReconnectionAttempts: 10,
@@ -209,9 +209,9 @@ export default class AdvancedSocketService {
       }
       
     } catch (error) {
-      console.error('Socket connection failed:', error);
+      console.warn('Socket connection failed, continuing in offline mode:', error);
       this.handleError('Connection failed', error);
-      throw error;
+      // Don't throw error - allow app to continue in offline mode
     }
   }
   
@@ -552,4 +552,124 @@ export default class AdvancedSocketService {
   // Persistence
   private async saveOfflineQueue(): Promise<void> {
     try {
-      await AsyncStorage.setItem(\n        this.STORAGE_KEYS.EVENT_QUEUE,\n        JSON.stringify(this.eventQueue)\n      );\n    } catch (error) {\n      console.error('Failed to save event queue:', error);\n    }\n  }\n  \n  private async loadOfflineQueue(): Promise<void> {\n    try {\n      const queueData = await AsyncStorage.getItem(this.STORAGE_KEYS.EVENT_QUEUE);\n      if (queueData) {\n        this.eventQueue = JSON.parse(queueData);\n        this.connectionStatus.queuedEvents = this.eventQueue.length;\n        console.log(`Loaded ${this.eventQueue.length} queued events`);\n      }\n    } catch (error) {\n      console.error('Failed to load event queue:', error);\n      this.eventQueue = [];\n    }\n  }\n  \n  private async saveConnectionState(): Promise<void> {\n    try {\n      await AsyncStorage.setItem(\n        this.STORAGE_KEYS.CONNECTION_STATE,\n        JSON.stringify({\n          lastConnected: this.connectionStatus.lastConnected,\n          lastSyncTime: this.connectionStatus.lastSyncTime,\n        })\n      );\n    } catch (error) {\n      console.error('Failed to save connection state:', error);\n    }\n  }\n  \n  private async loadConnectionState(): Promise<void> {\n    try {\n      const stateData = await AsyncStorage.getItem(this.STORAGE_KEYS.CONNECTION_STATE);\n      if (stateData) {\n        const state = JSON.parse(stateData);\n        this.connectionStatus.lastConnected = state.lastConnected;\n        this.connectionStatus.lastSyncTime = state.lastSyncTime;\n      }\n    } catch (error) {\n      console.error('Failed to load connection state:', error);\n    }\n  }\n  \n  // Event Callbacks\n  public setOnConnectionChangeCallback(callback: (status: ConnectionStatus) => void): void {\n    this.onConnectionChangeCallback = callback;\n  }\n  \n  public setOnRouteCalculatedCallback(callback: (route: RouteCalculated) => void): void {\n    this.onRouteCalculatedCallback = callback;\n  }\n  \n  public setOnSignalClearedCallback(callback: (signal: SignalCleared) => void): void {\n    this.onSignalClearedCallback = callback;\n  }\n  \n  public setOnETAUpdateCallback(callback: (eta: ETAUpdate) => void): void {\n    this.onETAUpdateCallback = callback;\n  }\n  \n  public setOnErrorCallback(callback: (error: string, details?: any) => void): void {\n    this.onErrorCallback = callback;\n  }\n  \n  // Internal Methods\n  private notifyConnectionChange(): void {\n    this.saveConnectionState();\n    \n    if (this.onConnectionChangeCallback) {\n      this.onConnectionChangeCallback(this.getConnectionStatus());\n    }\n  }\n  \n  private handleError(error: string, details?: any): void {\n    console.error('SocketService error:', error, details);\n    \n    if (this.onErrorCallback) {\n      this.onErrorCallback(error, details);\n    }\n  }\n  \n  // Cleanup\n  public async disconnect(): Promise<void> {\n    console.log('Disconnecting socket service...');\n    \n    this.stopPeriodicTasks();\n    \n    if (this.socket) {\n      this.socket.disconnect();\n      this.socket = null;\n    }\n    \n    this.connectionStatus.isConnected = false;\n    this.connectionStatus.isReconnecting = false;\n    \n    await this.saveConnectionState();\n    await this.saveOfflineQueue();\n    \n    this.notifyConnectionChange();\n  }\n  \n  public async dispose(): Promise<void> {\n    await this.disconnect();\n    \n    // Clear callbacks\n    this.onConnectionChangeCallback = undefined;\n    this.onRouteCalculatedCallback = undefined;\n    this.onSignalClearedCallback = undefined;\n    this.onETAUpdateCallback = undefined;\n    this.onErrorCallback = undefined;\n    \n    console.log('SocketService disposed');\n  }\n}
+      await AsyncStorage.setItem(
+        this.STORAGE_KEYS.EVENT_QUEUE,
+        JSON.stringify(this.eventQueue)
+      );
+    } catch (error) {
+      console.error('Failed to save event queue:', error);
+    }
+  }
+  
+  private async loadOfflineQueue(): Promise<void> {
+    try {
+      const queueData = await AsyncStorage.getItem(this.STORAGE_KEYS.EVENT_QUEUE);
+      if (queueData) {
+        this.eventQueue = JSON.parse(queueData);
+        this.connectionStatus.queuedEvents = this.eventQueue.length;
+        console.log(`Loaded ${this.eventQueue.length} queued events`);
+      }
+    } catch (error) {
+      console.error('Failed to load event queue:', error);
+      this.eventQueue = [];
+    }
+  }
+  
+  private async saveConnectionState(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        this.STORAGE_KEYS.CONNECTION_STATE,
+        JSON.stringify({
+          lastConnected: this.connectionStatus.lastConnected,
+          lastSyncTime: this.connectionStatus.lastSyncTime,
+        })
+      );
+    } catch (error) {
+      console.error('Failed to save connection state:', error);
+    }
+  }
+  
+  private async loadConnectionState(): Promise<void> {
+    try {
+      const stateData = await AsyncStorage.getItem(this.STORAGE_KEYS.CONNECTION_STATE);
+      if (stateData) {
+        const state = JSON.parse(stateData);
+        this.connectionStatus.lastConnected = state.lastConnected;
+        this.connectionStatus.lastSyncTime = state.lastSyncTime;
+      }
+    } catch (error) {
+      console.error('Failed to load connection state:', error);
+    }
+  }
+  
+  // Event Callbacks
+  public setOnConnectionChangeCallback(callback: (status: ConnectionStatus) => void): void {
+    this.onConnectionChangeCallback = callback;
+  }
+  
+  public setOnRouteCalculatedCallback(callback: (route: RouteCalculated) => void): void {
+    this.onRouteCalculatedCallback = callback;
+  }
+  
+  public setOnSignalClearedCallback(callback: (signal: SignalCleared) => void): void {
+    this.onSignalClearedCallback = callback;
+  }
+  
+  public setOnETAUpdateCallback(callback: (eta: ETAUpdate) => void): void {
+    this.onETAUpdateCallback = callback;
+  }
+  
+  public setOnErrorCallback(callback: (error: string, details?: any) => void): void {
+    this.onErrorCallback = callback;
+  }
+  
+  // Internal Methods
+  private notifyConnectionChange(): void {
+    this.saveConnectionState();
+    
+    if (this.onConnectionChangeCallback) {
+      this.onConnectionChangeCallback(this.getConnectionStatus());
+    }
+  }
+  
+  private handleError(error: string, details?: any): void {
+    console.error('SocketService error:', error, details);
+    
+    if (this.onErrorCallback) {
+      this.onErrorCallback(error, details);
+    }
+  }
+  
+  // Cleanup
+  public async disconnect(): Promise<void> {
+    console.log('Disconnecting socket service...');
+    
+    this.stopPeriodicTasks();
+    
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+    
+    this.connectionStatus.isConnected = false;
+    this.connectionStatus.isReconnecting = false;
+    
+    await this.saveConnectionState();
+    await this.saveOfflineQueue();
+    
+    this.notifyConnectionChange();
+  }
+  
+  public async dispose(): Promise<void> {
+    await this.disconnect();
+    
+    // Clear callbacks
+    this.onConnectionChangeCallback = undefined;
+    this.onRouteCalculatedCallback = undefined;
+    this.onSignalClearedCallback = undefined;
+    this.onETAUpdateCallback = undefined;
+    this.onErrorCallback = undefined;
+    
+    console.log('SocketService disposed');
+  }
+}

@@ -88,12 +88,12 @@ const WebMapView: React.FC<Props> = ({
             map: map,
             title: 'Ambulance Location',
             icon: {
-              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(\`
+              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
                 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
                   <circle cx="20" cy="20" r="18" fill="#FF6B6B" stroke="white" stroke-width="3"/>
                   <text x="20" y="28" font-size="20" text-anchor="middle" fill="white">🚑</text>
                 </svg>
-              \`),
+              `),
               scaledSize: new google.maps.Size(40, 40)
             }
           });
@@ -107,28 +107,28 @@ const WebMapView: React.FC<Props> = ({
               map: map,
               title: hospital.title,
               icon: {
-                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(\`
+                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
                   <svg xmlns="http://www.w3.org/2000/svg" width="35" height="35" viewBox="0 0 35 35">
                     <circle cx="17.5" cy="17.5" r="15" fill="#4CAF50" stroke="white" stroke-width="2"/>
                     <text x="17.5" y="25" font-size="16" text-anchor="middle" fill="white">🏥</text>
                   </svg>
-                \`),
+                `),
                 scaledSize: new google.maps.Size(35, 35)
               }
             });
 
             const infoWindow = new google.maps.InfoWindow({
-              content: \`
+              content: `
                 <div class="info-window">
-                  <h3>\${hospital.title}</h3>
+                  <h3>${hospital.title}</h3>
                   <p>Emergency Services Available</p>
-                  <button onclick="selectHospital('\${hospital.id}')" 
+                  <button onclick="selectHospital('${hospital.id}')" 
                           style="background: #4CAF50; color: white; border: none; 
                                  padding: 8px 16px; border-radius: 4px; cursor: pointer;">
                     Select Hospital
                   </button>
                 </div>
-              \`
+              `
             });
 
             marker.addListener('click', () => {
@@ -159,7 +159,7 @@ const WebMapView: React.FC<Props> = ({
             initMap();
           } else {
             // Fallback - show simple map with markers
-            document.getElementById('map').innerHTML = \`
+            document.getElementById('map').innerHTML = `
               <div style="display: flex; flex-direction: column; height: 100%; 
                           background: linear-gradient(45deg, #e3f2fd 0%, #bbdefb 100%); 
                           justify-content: center; align-items: center; font-family: Arial;">
@@ -171,7 +171,7 @@ const WebMapView: React.FC<Props> = ({
                   <div>Lat: ${lat.toFixed(6)}</div>
                   <div>Lng: ${lng.toFixed(6)}</div>
                 </div>
-                ${hospitals.map(h => \`
+                ${hospitals.map(h => `
                   <div style="background: white; padding: 15px; border-radius: 8px; 
                               margin: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
                               display: flex; align-items: center; cursor: pointer;"
@@ -182,9 +182,9 @@ const WebMapView: React.FC<Props> = ({
                       <small>Distance: ${((Math.random() * 5) + 1).toFixed(1)} km</small>
                     </div>
                   </div>
-                \`).join('')}
+                `).join('')}
               </div>
-            \`;
+            `;
           }
         }
 

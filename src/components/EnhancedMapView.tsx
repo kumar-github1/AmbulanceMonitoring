@@ -366,20 +366,20 @@ const EnhancedMapView: React.FC<Props> = ({
             map: map,
             title: 'Ambulance Location',
             icon: {
-              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(\`
-                <svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 50 50">
-                  <defs>
-                    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
-                      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="black" flood-opacity="0.3"/>
-                    </filter>
-                  </defs>
-                  <g transform="rotate(\${heading} 25 25)">
-                    <circle cx="25" cy="25" r="22" fill="#FF6B6B" stroke="white" stroke-width="4" filter="url(#shadow)"/>
-                    <text x="25" y="32" font-size="24" text-anchor="middle" fill="white">🚑</text>
-                    <polygon points="25,8 30,18 20,18" fill="white" opacity="0.9"/>
-                  </g>
-                </svg>
-              \`),
+              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 50 50">' +
+                  '<defs>' +
+                    '<filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">' +
+                      '<feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="black" flood-opacity="0.3"/>' +
+                    '</filter>' +
+                  '</defs>' +
+                  '<g transform="rotate(' + heading + ' 25 25)">' +
+                    '<circle cx="25" cy="25" r="22" fill="#FF6B6B" stroke="white" stroke-width="4" filter="url(#shadow)"/>' +
+                    '<text x="25" y="32" font-size="24" text-anchor="middle" fill="white">🚑</text>' +
+                    '<polygon points="25,8 30,18 20,18" fill="white" opacity="0.9"/>' +
+                  '</g>' +
+                '</svg>'
+              ),
               scaledSize: new google.maps.Size(50, 50),
               anchor: new google.maps.Point(25, 25)
             },
@@ -393,29 +393,28 @@ const EnhancedMapView: React.FC<Props> = ({
             map: map,
             title: hospital.title,
             icon: {
-              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(\`
-                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-                  <circle cx="20" cy="20" r="18" fill="#4CAF50" stroke="white" stroke-width="3"/>
-                  <text x="20" y="27" font-size="18" text-anchor="middle" fill="white">🏥</text>
-                </svg>
-              \`),
+              url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">' +
+                  '<circle cx="20" cy="20" r="18" fill="#4CAF50" stroke="white" stroke-width="3"/>' +
+                  '<text x="20" y="27" font-size="18" text-anchor="middle" fill="white">🏥</text>' +
+                '</svg>'
+              ),
               scaledSize: new google.maps.Size(40, 40)
             }
           });
 
           const infoWindow = new google.maps.InfoWindow({
-            content: \`
-              <div class="info-window">
-                <div class="hospital-info">
-                  <h3>\${hospital.title}</h3>
-                  <p><strong>Emergency Services:</strong> Available 24/7</p>
-                  <p><strong>Distance:</strong> \${calculateDistance(${lat}, ${lng}, hospital.position.lat, hospital.position.lng).toFixed(1)} km</p>
-                  <button class="select-hospital-btn" onclick="selectHospital('\${hospital.id}')">
-                    Set as Destination
-                  </button>
-                </div>
-              </div>
-            \`
+            content: 
+              '<div class="info-window">' +
+                '<div class="hospital-info">' +
+                  '<h3>' + hospital.title + '</h3>' +
+                  '<p><strong>Emergency Services:</strong> Available 24/7</p>' +
+                  '<p><strong>Distance:</strong> ' + calculateDistance(' + lat + ', ' + lng + ', hospital.position.lat, hospital.position.lng).toFixed(1) + ' km</p>' +
+                  '<button class="select-hospital-btn" onclick="selectHospital(\\'' + hospital.id + '\\\')">' +
+                    'Set as Destination' +
+                  '</button>' +
+                '</div>' +
+              '</div>'
           });
 
           marker.addListener('click', () => {
@@ -441,7 +440,7 @@ const EnhancedMapView: React.FC<Props> = ({
           // Update displays
           document.getElementById('latDisplay').textContent = lat.toFixed(6);
           document.getElementById('lngDisplay').textContent = lng.toFixed(6);
-          document.getElementById('compassNeedle').style.transform = \`rotate(\${heading}deg)\`;
+          document.getElementById('compassNeedle').style.transform = 'rotate(' + heading + 'deg)';
           document.getElementById('lastUpdate').textContent = 'Just now';
         }
         
@@ -515,7 +514,7 @@ const EnhancedMapView: React.FC<Props> = ({
         }
         
         function initStaticMap() {
-          document.getElementById('map').innerHTML = \`
+          let mapHTML = \`
             <div style="display: flex; flex-direction: column; height: 100%; 
                         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                         justify-content: center; align-items: center; color: white; text-align: center;">
@@ -525,12 +524,12 @@ const EnhancedMapView: React.FC<Props> = ({
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                   <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 12px;">
-                    <div style="font-size: 32px; font-weight: bold; color: #00ff00;">${speed.toFixed(0)} km/h</div>
+                    <div style="font-size: 32px; font-weight: bold; color: #00ff00;">\${speed.toFixed(0)} km/h</div>
                     <div style="font-size: 14px; opacity: 0.8;">Current Speed</div>
                   </div>
                   
                   <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 12px;">
-                    <div style="font-size: 32px; font-weight: bold; color: #00d4ff;">±${accuracy.toFixed(0)}m</div>
+                    <div style="font-size: 32px; font-weight: bold; color: #00d4ff;">±\${accuracy.toFixed(0)}m</div>
                     <div style="font-size: 14px; opacity: 0.8;">GPS Accuracy</div>
                   </div>
                 </div>
@@ -538,34 +537,47 @@ const EnhancedMapView: React.FC<Props> = ({
                 <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; margin-bottom: 20px;">
                   <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">📍 Current Position</div>
                   <div style="font-family: 'Courier New', monospace; font-size: 16px;">
-                    <div>Latitude: ${lat.toFixed(6)}</div>
-                    <div>Longitude: ${lng.toFixed(6)}</div>
+                    <div>Latitude: \${lat.toFixed(6)}</div>
+                    <div>Longitude: \${lng.toFixed(6)}</div>
                   </div>
                   <div style="margin-top: 10px; font-size: 14px; opacity: 0.8;">
-                    Heading: ${heading.toFixed(0)}° | Last Update: Just now
+                    Heading: \${heading.toFixed(0)}° | Last Update: Just now
                   </div>
                 </div>
-                
-                ${hospitals.length > 0 ? \`
-                  <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px;">
-                    <div style="font-size: 18px; font-weight: bold; margin-bottom: 15px;">🏥 Nearby Hospitals</div>
-                    \${hospitals.map(h => \`
-                      <div style="background: rgba(255,255,255,0.2); padding: 12px; border-radius: 8px; 
-                                  margin-bottom: 10px; cursor: pointer; transition: all 0.2s ease;"
-                           onclick="selectHospital('${h.id}')"
-                           onmouseover="this.style.background='rgba(255,255,255,0.3)'"
-                           onmouseout="this.style.background='rgba(255,255,255,0.2)'">
-                        <div style="font-weight: bold;">${h.name}</div>
-                        <div style="font-size: 14px; opacity: 0.8;">
-                          Distance: \${calculateDistance(${lat}, ${lng}, ${h.location.latitude}, ${h.location.longitude}).toFixed(1)} km
-                        </div>
+          \`;
+          
+          if (hospitals.length > 0) {
+            mapHTML += \`
+                <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px;">
+                  <div style="font-size: 18px; font-weight: bold; margin-bottom: 15px;">🏥 Nearby Hospitals</div>
+            \`;
+            
+            hospitals.forEach(h => {
+              mapHTML += \`
+                    <div style="background: rgba(255,255,255,0.2); padding: 12px; border-radius: 8px; 
+                                margin-bottom: 10px; cursor: pointer; transition: all 0.2s ease;"
+                         onclick="selectHospital('\${h.id}')"
+                         onmouseover="this.style.background='rgba(255,255,255,0.3)'"
+                         onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                      <div style="font-weight: bold;">\${h.name}</div>
+                      <div style="font-size: 14px; opacity: 0.8;">
+                        Distance: \${calculateDistance(\` + lat + \`, \` + lng + \`, \${h.location.latitude}, \${h.location.longitude}).toFixed(1)} km
                       </div>
-                    \`).join('')}
-                  </div>
-                \` : ''}
+                    </div>
+              \`;
+            });
+            
+            mapHTML += \`
+                </div>
+            \`;
+          }
+          
+          mapHTML += \`
               </div>
             </div>
           \`;
+          
+          document.getElementById('map').innerHTML = mapHTML;
           
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'map_loaded'

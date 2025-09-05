@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SocketService } from './SocketService';
+import AdvancedSocketService from './AdvancedSocketService';
 
 export interface Driver {
   id: string;
@@ -50,10 +50,10 @@ export interface PerformanceMetrics {
 class DriverService {
   private static instance: DriverService;
   private currentDriver: Driver | null = null;
-  private socketService: SocketService;
+  private socketService: AdvancedSocketService;
 
   private constructor() {
-    this.socketService = SocketService.getInstance();
+    this.socketService = AdvancedSocketService.getInstance();
   }
 
   public static getInstance(): DriverService {
@@ -78,7 +78,7 @@ class DriverService {
         const driver = await response.json();
         this.currentDriver = driver;
         await this.saveDriverLocally(driver);
-        await this.socketService.authenticateDriver(driver.id);
+        // Socket service will register ambulance when connecting with initial location
         return driver;
       }
     } catch (error) {

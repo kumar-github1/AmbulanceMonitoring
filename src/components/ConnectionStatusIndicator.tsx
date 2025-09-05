@@ -1,1 +1,419 @@
-import React, { useState, useEffect } from 'react';\nimport {\n  View,\n  Text,\n  StyleSheet,\n  TouchableOpacity,\n  Modal,\n  ActivityIndicator,\n  Dimensions,\n  ScrollView,\n} from 'react-native';\nimport { ConnectionStatus } from '../services/AdvancedSocketService';\n\ninterface Props {\n  connectionStatus: ConnectionStatus;\n  onManualReconnect?: () => void;\n  onClearQueue?: () => void;\n  style?: any;\n}\n\nconst { width } = Dimensions.get('window');\n\nconst ConnectionStatusIndicator: React.FC<Props> = ({\n  connectionStatus,\n  onManualReconnect,\n  onClearQueue,\n  style,\n}) => {\n  const [showDetails, setShowDetails] = useState(false);\n  const [lastUpdateText, setLastUpdateText] = useState('Never');\n\n  useEffect(() => {\n    const updateLastSyncText = () => {\n      if (!connectionStatus.lastSyncTime) {\n        setLastUpdateText('Never');\n        return;\n      }\n\n      const now = Date.now();\n      const diff = now - connectionStatus.lastSyncTime;\n\n      if (diff < 5000) {\n        setLastUpdateText('Just now');\n      } else if (diff < 60000) {\n        setLastUpdateText(`${Math.floor(diff / 1000)}s ago`);\n      } else if (diff < 3600000) {\n        setLastUpdateText(`${Math.floor(diff / 60000)}m ago`);\n      } else {\n        setLastUpdateText('Over 1h ago');\n      }\n    };\n\n    updateLastSyncText();\n    const interval = setInterval(updateLastSyncText, 1000);\n\n    return () => clearInterval(interval);\n  }, [connectionStatus.lastSyncTime]);\n\n  const getStatusColor = (): string => {\n    if (connectionStatus.isConnected) return '#4CAF50';\n    if (connectionStatus.isReconnecting) return '#FF9800';\n    return '#F44336';\n  };\n\n  const getStatusIcon = (): string => {\n    if (connectionStatus.isConnected) return '🟢';\n    if (connectionStatus.isReconnecting) return '🟡';\n    return '🔴';\n  };\n\n  const getStatusText = (): string => {\n    if (connectionStatus.isConnected) return 'Connected';\n    if (connectionStatus.isReconnecting) {\n      return `Reconnecting... (${connectionStatus.reconnectAttempts})`;\n    }\n    return 'Disconnected';\n  };\n\n  const getLatencyColor = (latency: number | null): string => {\n    if (!latency) return '#666';\n    if (latency < 100) return '#4CAF50';\n    if (latency < 300) return '#FF9800';\n    return '#F44336';\n  };\n\n  const formatLastConnected = (): string => {\n    if (!connectionStatus.lastConnected) return 'Never';\n    \n    const date = new Date(connectionStatus.lastConnected);\n    const now = new Date();\n    \n    if (date.toDateString() === now.toDateString()) {\n      return date.toLocaleTimeString();\n    }\n    \n    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();\n  };\n\n  return (\n    <>\n      <TouchableOpacity\n        style={[styles.container, { borderColor: getStatusColor() }, style]}\n        onPress={() => setShowDetails(true)}\n        activeOpacity={0.7}\n      >\n        <View style={styles.statusRow}>\n          <Text style={styles.statusIcon}>{getStatusIcon()}</Text>\n          <View style={styles.statusTextContainer}>\n            <Text style={[styles.statusText, { color: getStatusColor() }]}>\n              {getStatusText()}\n            </Text>\n            <Text style={styles.lastSync}>Last sync: {lastUpdateText}</Text>\n          </View>\n          {connectionStatus.queuedEvents > 0 && (\n            <View style={styles.queueBadge}>\n              <Text style={styles.queueText}>{connectionStatus.queuedEvents}</Text>\n            </View>\n          )}\n        </View>\n      </TouchableOpacity>\n\n      <Modal\n        visible={showDetails}\n        transparent\n        animationType=\"slide\"\n        onRequestClose={() => setShowDetails(false)}\n      >\n        <View style={styles.modalOverlay}>\n          <View style={styles.modalContent}>\n            <View style={styles.modalHeader}>\n              <Text style={styles.modalTitle}>Connection Details</Text>\n              <TouchableOpacity\n                style={styles.closeButton}\n                onPress={() => setShowDetails(false)}\n              >\n                <Text style={styles.closeButtonText}>×</Text>\n              </TouchableOpacity>\n            </View>\n\n            <ScrollView style={styles.modalBody}>\n              {/* Connection Status */}\n              <View style={styles.detailSection}>\n                <Text style={styles.sectionTitle}>🔗 Connection Status</Text>\n                <View style={styles.detailRow}>\n                  <Text style={styles.detailLabel}>Status:</Text>\n                  <View style={styles.statusContainer}>\n                    <Text style={[styles.detailValue, { color: getStatusColor() }]}>\n                      {getStatusIcon()} {getStatusText()}\n                    </Text>\n                  </View>\n                </View>\n                \n                <View style={styles.detailRow}>\n                  <Text style={styles.detailLabel}>Last Connected:</Text>\n                  <Text style={styles.detailValue}>{formatLastConnected()}</Text>\n                </View>\n                \n                <View style={styles.detailRow}>\n                  <Text style={styles.detailLabel}>Last Sync:</Text>\n                  <Text style={styles.detailValue}>{lastUpdateText}</Text>\n                </View>\n              </View>\n\n              {/* Network Stats */}\n              <View style={styles.detailSection}>\n                <Text style={styles.sectionTitle}>📊 Network Stats</Text>\n                \n                <View style={styles.detailRow}>\n                  <Text style={styles.detailLabel}>Server Latency:</Text>\n                  <Text style={[\n                    styles.detailValue,\n                    { color: getLatencyColor(connectionStatus.serverLatency) }\n                  ]}>\n                    {connectionStatus.serverLatency ? \n                      `${connectionStatus.serverLatency}ms` : 'Unknown'}\n                  </Text>\n                </View>\n                \n                <View style={styles.detailRow}>\n                  <Text style={styles.detailLabel}>Reconnect Attempts:</Text>\n                  <Text style={styles.detailValue}>\n                    {connectionStatus.reconnectAttempts}\n                  </Text>\n                </View>\n              </View>\n\n              {/* Offline Queue */}\n              <View style={styles.detailSection}>\n                <Text style={styles.sectionTitle}>📦 Offline Queue</Text>\n                \n                <View style={styles.detailRow}>\n                  <Text style={styles.detailLabel}>Queued Events:</Text>\n                  <Text style={[\n                    styles.detailValue,\n                    { color: connectionStatus.queuedEvents > 0 ? '#FF9800' : '#4CAF50' }\n                  ]}>\n                    {connectionStatus.queuedEvents}\n                  </Text>\n                </View>\n                \n                {connectionStatus.queuedEvents > 0 && (\n                  <TouchableOpacity\n                    style={styles.actionButton}\n                    onPress={() => {\n                      onClearQueue?.();\n                      setShowDetails(false);\n                    }}\n                  >\n                    <Text style={styles.actionButtonText}>Clear Queue</Text>\n                  </TouchableOpacity>\n                )}\n              </View>\n\n              {/* Manual Controls */}\n              <View style={styles.detailSection}>\n                <Text style={styles.sectionTitle}>🔧 Manual Controls</Text>\n                \n                <TouchableOpacity\n                  style={[\n                    styles.reconnectButton,\n                    connectionStatus.isReconnecting && styles.buttonDisabled\n                  ]}\n                  onPress={() => {\n                    onManualReconnect?.();\n                    setShowDetails(false);\n                  }}\n                  disabled={connectionStatus.isReconnecting}\n                >\n                  {connectionStatus.isReconnecting ? (\n                    <ActivityIndicator size=\"small\" color=\"#fff\" />\n                  ) : (\n                    <Text style={styles.reconnectButtonText}>🔄 Reconnect Now</Text>\n                  )}\n                </TouchableOpacity>\n              </View>\n\n              {/* Connection Tips */}\n              <View style={styles.detailSection}>\n                <Text style={styles.sectionTitle}>💡 Connection Tips</Text>\n                \n                <Text style={styles.tipText}>\n                  • Check your internet connection\n                </Text>\n                <Text style={styles.tipText}>\n                  • Ensure server URL is correct in settings\n                </Text>\n                <Text style={styles.tipText}>\n                  • Try manual reconnect if issues persist\n                </Text>\n                <Text style={styles.tipText}>\n                  • Events are queued when offline and sent when reconnected\n                </Text>\n              </View>\n            </ScrollView>\n          </View>\n        </View>\n      </Modal>\n    </>\n  );\n};\n\nconst styles = StyleSheet.create({\n  container: {\n    backgroundColor: 'rgba(255, 255, 255, 0.95)',\n    borderWidth: 2,\n    borderRadius: 12,\n    padding: 12,\n    shadowColor: '#000',\n    shadowOffset: { width: 0, height: 2 },\n    shadowOpacity: 0.1,\n    shadowRadius: 4,\n    elevation: 3,\n  },\n  statusRow: {\n    flexDirection: 'row',\n    alignItems: 'center',\n  },\n  statusIcon: {\n    fontSize: 16,\n    marginRight: 8,\n  },\n  statusTextContainer: {\n    flex: 1,\n  },\n  statusText: {\n    fontSize: 14,\n    fontWeight: '600',\n  },\n  lastSync: {\n    fontSize: 12,\n    color: '#666',\n    marginTop: 2,\n  },\n  queueBadge: {\n    backgroundColor: '#FF9800',\n    borderRadius: 10,\n    minWidth: 20,\n    height: 20,\n    justifyContent: 'center',\n    alignItems: 'center',\n    paddingHorizontal: 6,\n  },\n  queueText: {\n    color: '#fff',\n    fontSize: 12,\n    fontWeight: 'bold',\n  },\n  \n  // Modal styles\n  modalOverlay: {\n    flex: 1,\n    backgroundColor: 'rgba(0, 0, 0, 0.5)',\n    justifyContent: 'flex-end',\n  },\n  modalContent: {\n    backgroundColor: '#fff',\n    borderTopLeftRadius: 20,\n    borderTopRightRadius: 20,\n    maxHeight: '80%',\n  },\n  modalHeader: {\n    flexDirection: 'row',\n    justifyContent: 'space-between',\n    alignItems: 'center',\n    padding: 20,\n    borderBottomWidth: 1,\n    borderBottomColor: '#eee',\n  },\n  modalTitle: {\n    fontSize: 20,\n    fontWeight: 'bold',\n    color: '#333',\n  },\n  closeButton: {\n    width: 30,\n    height: 30,\n    borderRadius: 15,\n    backgroundColor: '#f0f0f0',\n    justifyContent: 'center',\n    alignItems: 'center',\n  },\n  closeButtonText: {\n    fontSize: 20,\n    color: '#666',\n    fontWeight: 'bold',\n  },\n  modalBody: {\n    padding: 20,\n  },\n  detailSection: {\n    marginBottom: 25,\n  },\n  sectionTitle: {\n    fontSize: 16,\n    fontWeight: 'bold',\n    color: '#333',\n    marginBottom: 12,\n  },\n  detailRow: {\n    flexDirection: 'row',\n    justifyContent: 'space-between',\n    alignItems: 'center',\n    marginBottom: 8,\n  },\n  detailLabel: {\n    fontSize: 14,\n    color: '#666',\n    flex: 1,\n  },\n  detailValue: {\n    fontSize: 14,\n    fontWeight: '600',\n    color: '#333',\n    textAlign: 'right',\n    flex: 1,\n  },\n  statusContainer: {\n    flex: 1,\n    alignItems: 'flex-end',\n  },\n  actionButton: {\n    backgroundColor: '#FF9800',\n    paddingHorizontal: 16,\n    paddingVertical: 8,\n    borderRadius: 6,\n    alignSelf: 'flex-start',\n    marginTop: 8,\n  },\n  actionButtonText: {\n    color: '#fff',\n    fontSize: 14,\n    fontWeight: '600',\n  },\n  reconnectButton: {\n    backgroundColor: '#4CAF50',\n    paddingVertical: 12,\n    paddingHorizontal: 20,\n    borderRadius: 8,\n    alignItems: 'center',\n    flexDirection: 'row',\n    justifyContent: 'center',\n  },\n  buttonDisabled: {\n    backgroundColor: '#ccc',\n  },\n  reconnectButtonText: {\n    color: '#fff',\n    fontSize: 16,\n    fontWeight: '600',\n  },\n  tipText: {\n    fontSize: 14,\n    color: '#666',\n    marginBottom: 6,\n    lineHeight: 20,\n  },\n});\n\nexport default ConnectionStatusIndicator;
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  ActivityIndicator,
+  Dimensions,
+  ScrollView,
+} from 'react-native';
+import { ConnectionStatus } from '../services/AdvancedSocketService';
+
+interface Props {
+  connectionStatus: ConnectionStatus;
+  onManualReconnect?: () => void;
+  onClearQueue?: () => void;
+  style?: any;
+}
+
+const { width } = Dimensions.get('window');
+
+const ConnectionStatusIndicator: React.FC<Props> = ({
+  connectionStatus,
+  onManualReconnect,
+  onClearQueue,
+  style,
+}) => {
+  const [showDetails, setShowDetails] = useState(false);
+  const [lastUpdateText, setLastUpdateText] = useState('Never');
+
+  useEffect(() => {
+    const updateLastSyncText = () => {
+      if (!connectionStatus.lastSyncTime) {
+        setLastUpdateText('Never');
+        return;
+      }
+
+      const now = Date.now();
+      const diff = now - connectionStatus.lastSyncTime;
+
+      if (diff < 5000) {
+        setLastUpdateText('Just now');
+      } else if (diff < 60000) {
+        setLastUpdateText(`${Math.floor(diff / 1000)}s ago`);
+      } else if (diff < 3600000) {
+        setLastUpdateText(`${Math.floor(diff / 60000)}m ago`);
+      } else {
+        setLastUpdateText('Over 1h ago');
+      }
+    };
+
+    updateLastSyncText();
+    const interval = setInterval(updateLastSyncText, 1000);
+
+    return () => clearInterval(interval);
+  }, [connectionStatus.lastSyncTime]);
+
+  const getStatusColor = (): string => {
+    if (connectionStatus.isConnected) return '#4CAF50';
+    if (connectionStatus.isReconnecting) return '#FF9800';
+    return '#F44336';
+  };
+
+  const getStatusIcon = (): string => {
+    if (connectionStatus.isConnected) return '🟢';
+    if (connectionStatus.isReconnecting) return '🟡';
+    return '🔴';
+  };
+
+  const getStatusText = (): string => {
+    if (connectionStatus.isConnected) return 'Connected';
+    if (connectionStatus.isReconnecting) {
+      return `Reconnecting... (${connectionStatus.reconnectAttempts})`;
+    }
+    return 'Disconnected';
+  };
+
+  const getLatencyColor = (latency: number | null): string => {
+    if (!latency) return '#666';
+    if (latency < 100) return '#4CAF50';
+    if (latency < 300) return '#FF9800';
+    return '#F44336';
+  };
+
+  const formatLastConnected = (): string => {
+    if (!connectionStatus.lastConnected) return 'Never';
+    
+    const date = new Date(connectionStatus.lastConnected);
+    const now = new Date();
+    
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString();
+    }
+    
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+  };
+
+  return (
+    <>
+      <TouchableOpacity
+        style={[styles.container, { borderColor: getStatusColor() }, style]}
+        onPress={() => setShowDetails(true)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.statusRow}>
+          <Text style={styles.statusIcon}>{getStatusIcon()}</Text>
+          <View style={styles.statusTextContainer}>
+            <Text style={[styles.statusText, { color: getStatusColor() }]}>
+              {getStatusText()}
+            </Text>
+            <Text style={styles.lastSync}>Last sync: {lastUpdateText}</Text>
+          </View>
+          {connectionStatus.queuedEvents > 0 && (
+            <View style={styles.queueBadge}>
+              <Text style={styles.queueText}>{connectionStatus.queuedEvents}</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+
+      <Modal
+        visible={showDetails}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDetails(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Connection Details</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowDetails(false)}
+              >
+                <Text style={styles.closeButtonText}>×</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              {/* Connection Status */}
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>🔗 Connection Status</Text>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Status:</Text>
+                  <View style={styles.statusContainer}>
+                    <Text style={[styles.detailValue, { color: getStatusColor() }]}>
+                      {getStatusIcon()} {getStatusText()}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Last Connected:</Text>
+                  <Text style={styles.detailValue}>{formatLastConnected()}</Text>
+                </View>
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Last Sync:</Text>
+                  <Text style={styles.detailValue}>{lastUpdateText}</Text>
+                </View>
+              </View>
+
+              {/* Network Stats */}
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>📊 Network Stats</Text>
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Server Latency:</Text>
+                  <Text style={[
+                    styles.detailValue,
+                    { color: getLatencyColor(connectionStatus.serverLatency) }
+                  ]}>
+                    {connectionStatus.serverLatency ? 
+                      `${connectionStatus.serverLatency}ms` : 'Unknown'}
+                  </Text>
+                </View>
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Reconnect Attempts:</Text>
+                  <Text style={styles.detailValue}>
+                    {connectionStatus.reconnectAttempts}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Offline Queue */}
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>📦 Offline Queue</Text>
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Queued Events:</Text>
+                  <Text style={[
+                    styles.detailValue,
+                    { color: connectionStatus.queuedEvents > 0 ? '#FF9800' : '#4CAF50' }
+                  ]}>
+                    {connectionStatus.queuedEvents}
+                  </Text>
+                </View>
+                
+                {connectionStatus.queuedEvents > 0 && (
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => {
+                      onClearQueue?.();
+                      setShowDetails(false);
+                    }}
+                  >
+                    <Text style={styles.actionButtonText}>Clear Queue</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Manual Controls */}
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>🔧 Manual Controls</Text>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.reconnectButton,
+                    connectionStatus.isReconnecting && styles.buttonDisabled
+                  ]}
+                  onPress={() => {
+                    onManualReconnect?.();
+                    setShowDetails(false);
+                  }}
+                  disabled={connectionStatus.isReconnecting}
+                >
+                  {connectionStatus.isReconnecting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.reconnectButtonText}>🔄 Reconnect Now</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {/* Connection Tips */}
+              <View style={styles.detailSection}>
+                <Text style={styles.sectionTitle}>💡 Connection Tips</Text>
+                
+                <Text style={styles.tipText}>
+                  • Check your internet connection
+                </Text>
+                <Text style={styles.tipText}>
+                  • Ensure server URL is correct in settings
+                </Text>
+                <Text style={styles.tipText}>
+                  • Try manual reconnect if issues persist
+                </Text>
+                <Text style={styles.tipText}>
+                  • Events are queued when offline and sent when reconnected
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  statusTextContainer: {
+    flex: 1,
+  },
+  statusText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  lastSync: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  queueBadge: {
+    backgroundColor: '#FF9800',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  queueText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  closeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    fontSize: 20,
+    color: '#666',
+    fontWeight: 'bold',
+  },
+  modalBody: {
+    padding: 20,
+  },
+  detailSection: {
+    marginBottom: 25,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  detailLabel: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'right',
+    flex: 1,
+  },
+  statusContainer: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  actionButton: {
+    backgroundColor: '#FF9800',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  reconnectButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  buttonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  reconnectButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tipText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+});
+
+export default ConnectionStatusIndicator;
