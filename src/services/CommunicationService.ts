@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SocketService } from './SocketService';
+import SocketService from './SocketService';
 
 export interface Message {
   id: string;

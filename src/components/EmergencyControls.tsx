@@ -169,7 +169,7 @@ const EmergencyControls: React.FC<Props> = ({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: () => {
-      swipeAnimation.setOffset(swipeAnimation._value);
+      swipeAnimation.extractOffset();
     },
     onPanResponderMove: Animated.event([null, { dx: swipeAnimation }], {
       useNativeDriver: false,

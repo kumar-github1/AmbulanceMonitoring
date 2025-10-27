@@ -9,13 +9,14 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { EmergencyStats, TrafficSignalStatus } from '../services/EmergencyService';
+import { EmergencyStats } from '../services/EmergencyService';
+import { TrafficSignal } from '../services/TrafficSignalService';
 import { Hospital } from '../services/HospitalService';
 
 interface Props {
   visible: boolean;
   stats: EmergencyStats;
-  signals: TrafficSignalStatus[];
+  signals: TrafficSignal[];
   destination?: Hospital;
   onManualOverride: () => void;
   onClose: () => void;
@@ -91,7 +92,7 @@ const EmergencyDashboard: React.FC<Props> = ({
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     if (hours > 0) {
       return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
@@ -107,7 +108,7 @@ const EmergencyDashboard: React.FC<Props> = ({
 
   const formatETA = (timestamp: number): string => {
     if (!timestamp) return '--:--';
-    
+
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
@@ -121,9 +122,9 @@ const EmergencyDashboard: React.FC<Props> = ({
 
   const getSignalStatusColor = (status: string): string => {
     switch (status) {
-      case 'cleared': return '#4CAF50';
-      case 'pending': return '#FF9800';
-      case 'normal': return '#F44336';
+      case 'cleared_for_ambulance': return '#4CAF50'; // Green - cleared
+      case 'emergency_mode': return '#FF9800'; // Orange - in progress
+      case 'normal': return '#F44336'; // Red - not cleared
       default: return '#666';
     }
   };
@@ -163,8 +164,12 @@ const EmergencyDashboard: React.FC<Props> = ({
   );
 
   const renderTrafficSignals = () => {
-    const upcomingSignals = signals.filter(s => s.distance > 0).slice(0, 3);
-    
+    // Filter upcoming signals by proximity
+    const upcomingSignals = signals
+      .filter(s => s.ambulanceProximity && s.ambulanceProximity > 0)
+      .sort((a, b) => (a.ambulanceProximity || 0) - (b.ambulanceProximity || 0))
+      .slice(0, 3);
+
     if (upcomingSignals.length === 0) {
       return (
         <View style={styles.signalsContainer}>
@@ -180,17 +185,17 @@ const EmergencyDashboard: React.FC<Props> = ({
         {upcomingSignals.map((signal, index) => (
           <View key={signal.id} style={styles.signalItem}>
             <View style={[styles.signalIndicator, { backgroundColor: getSignalStatusColor(signal.status) }]}>
-              <Ionicons 
-                name={signal.status === 'cleared' ? 'checkmark' : signal.status === 'pending' ? 'time' : 'close'} 
-                size={16} 
-                color="#fff" 
+              <Ionicons
+                name={signal.status === 'cleared_for_ambulance' ? 'checkmark' : signal.status === 'emergency_mode' ? 'time' : 'close'}
+                size={16}
+                color="#fff"
               />
             </View>
             <View style={styles.signalInfo}>
-              <Text style={styles.signalDistance}>{formatDistance(signal.distance)}</Text>
+              <Text style={styles.signalDistance}>{formatDistance(signal.ambulanceProximity || 0)}</Text>
               <Text style={styles.signalStatus}>
-                {signal.status.toUpperCase()}
-                {signal.countdownTimer && ` (${signal.countdownTimer}s)`}
+                {signal.status.replace('_', ' ').toUpperCase()}
+                {signal.countdown && ` (${signal.countdown}s)`}
               </Text>
             </View>
           </View>
@@ -226,7 +231,7 @@ const EmergencyDashboard: React.FC<Props> = ({
         {/* Main Stats Row */}
         <View style={styles.mainStatsContainer}>
           {renderSpeedometer()}
-          
+
           <View style={styles.etaContainer}>
             <Text style={styles.etaLabel}>ETA</Text>
             <Text style={styles.etaValue}>{formatETA(stats.estimatedArrival)}</Text>

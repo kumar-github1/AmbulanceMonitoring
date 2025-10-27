@@ -85,14 +85,14 @@ const ConnectionStatusIndicator: React.FC<Props> = ({
 
   const formatLastConnected = (): string => {
     if (!connectionStatus.lastConnected) return 'Never';
-    
-    const date = new Date(connectionStatus.lastConnected);
+
+    const date = new Date(connectionStatus.lastConnected); // Convert timestamp to Date
     const now = new Date();
-    
+
     if (date.toDateString() === now.toDateString()) {
       return date.toLocaleTimeString();
     }
-    
+
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
@@ -149,12 +149,12 @@ const ConnectionStatusIndicator: React.FC<Props> = ({
                     </Text>
                   </View>
                 </View>
-                
+
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Last Connected:</Text>
                   <Text style={styles.detailValue}>{formatLastConnected()}</Text>
                 </View>
-                
+
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Last Sync:</Text>
                   <Text style={styles.detailValue}>{lastUpdateText}</Text>
@@ -164,18 +164,18 @@ const ConnectionStatusIndicator: React.FC<Props> = ({
               {/* Network Stats */}
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>📊 Network Stats</Text>
-                
+
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Server Latency:</Text>
                   <Text style={[
                     styles.detailValue,
                     { color: getLatencyColor(connectionStatus.serverLatency) }
                   ]}>
-                    {connectionStatus.serverLatency ? 
+                    {connectionStatus.serverLatency ?
                       `${connectionStatus.serverLatency}ms` : 'Unknown'}
                   </Text>
                 </View>
-                
+
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Reconnect Attempts:</Text>
                   <Text style={styles.detailValue}>
@@ -187,7 +187,7 @@ const ConnectionStatusIndicator: React.FC<Props> = ({
               {/* Offline Queue */}
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>📦 Offline Queue</Text>
-                
+
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Queued Events:</Text>
                   <Text style={[
@@ -197,7 +197,7 @@ const ConnectionStatusIndicator: React.FC<Props> = ({
                     {connectionStatus.queuedEvents}
                   </Text>
                 </View>
-                
+
                 {connectionStatus.queuedEvents > 0 && (
                   <TouchableOpacity
                     style={styles.actionButton}
@@ -214,7 +214,7 @@ const ConnectionStatusIndicator: React.FC<Props> = ({
               {/* Manual Controls */}
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>🔧 Manual Controls</Text>
-                
+
                 <TouchableOpacity
                   style={[
                     styles.reconnectButton,
@@ -237,7 +237,7 @@ const ConnectionStatusIndicator: React.FC<Props> = ({
               {/* Connection Tips */}
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>💡 Connection Tips</Text>
-                
+
                 <Text style={styles.tipText}>
                   • Check your internet connection
                 </Text>
@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  
+
   // Modal styles
   modalOverlay: {
     flex: 1,

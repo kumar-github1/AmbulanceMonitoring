@@ -1,7 +1,8 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { LocationData, GPSStatus } from '../services/GPSService';
+import CONFIG from '../config/apiConfig';
 
 interface Hospital {
   id: string;
@@ -28,12 +29,13 @@ interface Props {
   mapControls?: MapControls;
   gpsStatus?: GPSStatus;
   onLocationPress?: () => void;
+  followMode?: boolean; // New prop to control auto-following
 }
 
 const { width, height } = Dimensions.get('window');
 
-const EnhancedMapView: React.FC<Props> = ({ 
-  style, 
+const EnhancedMapView: React.FC<Props> = ({
+  style,
   currentLocation,
   hospitals = [],
   selectedHospital,
@@ -45,17 +47,32 @@ const EnhancedMapView: React.FC<Props> = ({
     showCoordinates: true,
   },
   gpsStatus,
-  onLocationPress
+  onLocationPress,
+  followMode = false, // Default to not following
 }) => {
   const webViewRef = useRef<WebView>(null);
   const [mapZoom, setMapZoom] = useState(15);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
+  const [userInteracting, setUserInteracting] = useState(false);
 
-  const lat = currentLocation?.latitude || 37.7749;
-  const lng = currentLocation?.longitude || -122.4194;
+  // Use fallback coordinates for initial HTML generation to prevent reloads
+  const initialLat = CONFIG.FALLBACK_LOCATION.latitude;
+  const initialLng = CONFIG.FALLBACK_LOCATION.longitude;
+  const initialHeading = 0;
+  const initialSpeed = 0;
+  const initialAccuracy = 10;
+
+  // Current location values for JavaScript injection
+  const lat = currentLocation?.latitude || initialLat;
+  const lng = currentLocation?.longitude || initialLng;
   const heading = currentLocation?.heading || 0;
   const speed = currentLocation?.speed || 0;
-  const accuracy = currentLocation?.accuracy || 0;
+  const accuracy = currentLocation?.accuracy || 10;
+
+  // Memoize the HTML with static initial coordinates to prevent unnecessary WebView reloads
+  const mapHTML = useMemo(() => {
+    return generateMapHTML(initialLat, initialLng, initialHeading, initialSpeed, initialAccuracy);
+  }, [hospitals, selectedHospital, mapControls, CONFIG.GOOGLE_MAPS_API_KEY]);
 
   // Update map location when currentLocation changes
   useEffect(() => {
@@ -64,12 +81,43 @@ const EnhancedMapView: React.FC<Props> = ({
         if (typeof updateAmbulanceLocation !== 'undefined') {
           updateAmbulanceLocation(${currentLocation.latitude}, ${currentLocation.longitude}, ${currentLocation.heading || 0});
         }
+        if (typeof updateSpeed !== 'undefined') {
+          updateSpeed(${currentLocation.speed || 0});
+        }
+        if (typeof updateAccuracy !== 'undefined') {
+          updateAccuracy(${currentLocation.accuracy || 0});
+        }
+        
+        // NEVER auto-center the map - only update marker position
+        // Let user control map position manually
       `;
       webViewRef.current.injectJavaScript(updateScript);
     }
   }, [currentLocation, isMapLoaded]);
 
-  const generateMapHTML = () => {
+  // Initial location update when map first loads
+  useEffect(() => {
+    if (isMapLoaded && currentLocation && webViewRef.current) {
+      // Inject initial location if it's different from fallback
+      if (currentLocation.latitude !== initialLat || currentLocation.longitude !== initialLng) {
+        const initialUpdateScript = `
+          console.log('Setting initial ambulance location to current position');
+          if (typeof updateAmbulanceLocation !== 'undefined') {
+            updateAmbulanceLocation(${currentLocation.latitude}, ${currentLocation.longitude}, ${currentLocation.heading || 0});
+          }
+          if (typeof updateSpeed !== 'undefined') {
+            updateSpeed(${currentLocation.speed || 0});
+          }
+          if (typeof updateAccuracy !== 'undefined') {
+            updateAccuracy(${currentLocation.accuracy || 0});
+          }
+        `;
+        webViewRef.current.injectJavaScript(initialUpdateScript);
+      }
+    }
+  }, [isMapLoaded]);
+
+  const generateMapHTML = (htmlLat: number, htmlLng: number, htmlHeading: number, htmlSpeed: number, htmlAccuracy: number) => {
     const hospitalMarkers = hospitals.map(hospital => `
       {
         position: { lat: ${hospital.location.latitude}, lng: ${hospital.location.longitude} },
@@ -264,18 +312,18 @@ const EnhancedMapView: React.FC<Props> = ({
       </div>
       
       <div class="info-panel">
-        <div class="speed-display" id="speedDisplay">${speed.toFixed(0)} km/h</div>
+        <div class="speed-display" id="speedDisplay">${htmlSpeed.toFixed(0)} km/h</div>
         <div>📍 <strong>GPS Status:</strong> <span id="gpsStatus">Active</span></div>
-        <div>🎯 <strong>Accuracy:</strong> <span id="accuracyDisplay">±${accuracy.toFixed(0)}m</span></div>
+        <div>🎯 <strong>Accuracy:</strong> <span id="accuracyDisplay">±${htmlAccuracy.toFixed(0)}m</span></div>
         <div class="coordinates">
-          <div>Lat: <span id="latDisplay">${lat.toFixed(6)}</span></div>
-          <div>Lng: <span id="lngDisplay">${lng.toFixed(6)}</span></div>
+          <div>Lat: <span id="latDisplay">${htmlLat.toFixed(6)}</span></div>
+          <div>Lng: <span id="lngDisplay">${htmlLng.toFixed(6)}</span></div>
         </div>
         <div>⏰ <span id="lastUpdate">Now</span></div>
       </div>
       
       <div class="compass" title="Compass">
-        <div class="compass-needle" id="compassNeedle" style="transform: rotate(${heading}deg)"></div>
+        <div class="compass-needle" id="compassNeedle" style="transform: rotate(${htmlHeading}deg)"></div>
       </div>
       
       <div class="status-indicator status-good" id="statusIndicator">
@@ -292,11 +340,12 @@ const EnhancedMapView: React.FC<Props> = ({
         let accuracyCircle;
         let hospitalMarkers = [];
         let currentZoom = ${mapZoom};
+        let userInteracting = false; // Track user interaction state
 
         function initMap() {
           map = new google.maps.Map(document.getElementById('map'), {
             zoom: currentZoom,
-            center: { lat: ${lat}, lng: ${lng} },
+            center: { lat: ${htmlLat}, lng: ${htmlLng} },
             mapTypeId: 'roadmap',
             disableDefaultUI: true,
             gestureHandling: 'greedy',
@@ -320,7 +369,7 @@ const EnhancedMapView: React.FC<Props> = ({
           });
 
           // Create ambulance marker
-          createAmbulanceMarker(${lat}, ${lng}, ${heading});
+          createAmbulanceMarker(${htmlLat}, ${htmlLng}, ${htmlHeading});
 
           // Add hospital markers
           const hospitals = [${hospitalMarkers}];
@@ -328,7 +377,7 @@ const EnhancedMapView: React.FC<Props> = ({
             createHospitalMarker(hospital);
           });
           
-          // Map event listeners
+          // Map event listeners for zoom tracking
           map.addListener('zoom_changed', () => {
             currentZoom = map.getZoom();
             updateAccuracyCircle();
@@ -351,7 +400,7 @@ const EnhancedMapView: React.FC<Props> = ({
           // Create accuracy circle
           accuracyCircle = new google.maps.Circle({
             center: { lat: lat, lng: lng },
-            radius: ${accuracy} || 10,
+            radius: ${htmlAccuracy} || 10,
             fillColor: '#0096FF',
             fillOpacity: 0.1,
             strokeColor: '#0096FF',
@@ -458,7 +507,7 @@ const EnhancedMapView: React.FC<Props> = ({
         function updateAccuracyCircle() {
           if (accuracyCircle) {
             // Adjust circle size based on zoom level
-            const baseRadius = ${accuracy} || 10;
+            const baseRadius = ${htmlAccuracy} || 10;
             const zoomFactor = Math.pow(2, (15 - currentZoom));
             accuracyCircle.setRadius(baseRadius * Math.max(0.5, zoomFactor));
           }
@@ -506,72 +555,105 @@ const EnhancedMapView: React.FC<Props> = ({
         // Initialize map when Google Maps API is loaded
         function loadMap() {
           if (typeof google !== 'undefined' && google.maps) {
+            console.log('Google Maps API loaded successfully');
             initMap();
           } else {
+            console.log('Google Maps API not available, using fallback static view');
             // Fallback to enhanced static view
             initStaticMap();
           }
         }
         
         function initStaticMap() {
+          console.log('Initializing static fallback map with location:', ${htmlLat}, ${htmlLng});
           let mapHTML = \`
-            <div style="display: flex; flex-direction: column; height: 100%; 
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                        justify-content: center; align-items: center; color: white; text-align: center;">
-              <div style="background: rgba(0,0,0,0.8); padding: 30px; border-radius: 20px; 
-                          backdrop-filter: blur(10px); max-width: 90%; margin: 20px;">
-                <h1 style="margin: 0 0 20px 0; font-size: 28px;">🚑 Emergency GPS</h1>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-                  <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 12px;">
-                    <div style="font-size: 32px; font-weight: bold; color: #00ff00;">\${speed.toFixed(0)} km/h</div>
-                    <div style="font-size: 14px; opacity: 0.8;">Current Speed</div>
+            <div style="display: flex; flex-direction: column; height: 100%;
+                        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+                        justify-content: flex-start; align-items: center; color: white; position: relative;">
+
+              <!-- Map Header -->
+              <div style="width: 100%; padding: 20px; text-align: center; background: rgba(0,0,0,0.5);">
+                <h2 style="margin: 0; font-size: 24px; color: #fff;">🚑 AMBULANCE GPS</h2>
+              </div>
+
+              <!-- Main Map Area -->
+              <div style="flex: 1; width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px;">
+
+                <!-- Location Card -->
+                <div style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);
+                            border-radius: 20px; padding: 25px; margin-bottom: 20px; min-width: 300px;
+                            border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+                  <div style="text-align: center; margin-bottom: 20px;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">📍</div>
+                    <div style="font-size: 18px; font-weight: bold; color: #4fc3f7;">CURRENT LOCATION</div>
                   </div>
-                  
-                  <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 12px;">
-                    <div style="font-size: 32px; font-weight: bold; color: #00d4ff;">±\${accuracy.toFixed(0)}m</div>
-                    <div style="font-size: 14px; opacity: 0.8;">GPS Accuracy</div>
+
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div style="text-align: center; padding: 15px; background: rgba(76, 175, 80, 0.2); border-radius: 12px;">
+                      <div style="font-size: 28px; font-weight: bold; color: #4caf50;">\${htmlSpeed.toFixed(0)}</div>
+                      <div style="font-size: 12px; color: #ccc;">km/h</div>
+                    </div>
+
+                    <div style="text-align: center; padding: 15px; background: rgba(33, 150, 243, 0.2); border-radius: 12px;">
+                      <div style="font-size: 28px; font-weight: bold; color: #2196f3;">±\${htmlAccuracy.toFixed(0)}</div>
+                      <div style="font-size: 12px; color: #ccc;">meters</div>
+                    </div>
+                  </div>
+
+                  <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 12px;">
+                    <div style="font-size: 14px; color: #ccc; margin-bottom: 5px;">COORDINATES</div>
+                    <div style="font-family: 'Courier New', monospace; font-size: 16px; color: #fff;">
+                      \${htmlLat.toFixed(6)}, \${htmlLng.toFixed(6)}
+                    </div>
+                    <div style="font-size: 12px; color: #ccc; margin-top: 5px;">
+                      Heading: \${htmlHeading.toFixed(0)}° | Updated: Just now
+                    </div>
                   </div>
                 </div>
-                
-                <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; margin-bottom: 20px;">
-                  <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">📍 Current Position</div>
-                  <div style="font-family: 'Courier New', monospace; font-size: 16px;">
-                    <div>Latitude: \${lat.toFixed(6)}</div>
-                    <div>Longitude: \${lng.toFixed(6)}</div>
-                  </div>
-                  <div style="margin-top: 10px; font-size: 14px; opacity: 0.8;">
-                    Heading: \${heading.toFixed(0)}° | Last Update: Just now
-                  </div>
-                </div>
+
+                <!-- Hospitals Section -->
           \`;
-          
+
           if (hospitals.length > 0) {
             mapHTML += \`
-                <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px;">
-                  <div style="font-size: 18px; font-weight: bold; margin-bottom: 15px;">🏥 Nearby Hospitals</div>
+                <div style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);
+                            border-radius: 20px; padding: 20px; width: 100%; max-width: 400px;
+                            border: 1px solid rgba(255,255,255,0.2);">
+                  <div style="text-align: center; margin-bottom: 15px;">
+                    <div style="font-size: 32px; margin-bottom: 5px;">🏥</div>
+                    <div style="font-size: 16px; font-weight: bold; color: #4fc3f7;">NEARBY HOSPITALS</div>
+                  </div>
             \`;
-            
+
             hospitals.forEach(h => {
               mapHTML += \`
-                    <div style="background: rgba(255,255,255,0.2); padding: 12px; border-radius: 8px; 
-                                margin-bottom: 10px; cursor: pointer; transition: all 0.2s ease;"
+                    <div style="background: rgba(76, 175, 80, 0.2); padding: 15px; border-radius: 12px;
+                                margin-bottom: 10px; cursor: pointer; transition: all 0.3s ease;
+                                border: 1px solid rgba(76, 175, 80, 0.3);"
                          onclick="selectHospital('\${h.id}')"
-                         onmouseover="this.style.background='rgba(255,255,255,0.3)'"
-                         onmouseout="this.style.background='rgba(255,255,255,0.2)'">
-                      <div style="font-weight: bold;">\${h.name}</div>
-                      <div style="font-size: 14px; opacity: 0.8;">
+                         onmouseover="this.style.background='rgba(76, 175, 80, 0.3)'"
+                         onmouseout="this.style.background='rgba(76, 175, 80, 0.2)'">
+                      <div style="font-weight: bold; font-size: 16px; color: #fff; margin-bottom: 5px;">\${h.name}</div>
+                      <div style="font-size: 14px; color: #ccc;">
                         Distance: \${calculateDistance(\` + lat + \`, \` + lng + \`, \${h.location.latitude}, \${h.location.longitude}).toFixed(1)} km
                       </div>
                     </div>
               \`;
             });
-            
+
             mapHTML += \`
                 </div>
             \`;
+          } else {
+            mapHTML += \`
+                <div style="background: rgba(255,193,7,0.1); border-radius: 15px; padding: 15px;
+                            border: 1px solid rgba(255,193,7,0.3); text-align: center;">
+                  <div style="font-size: 24px; margin-bottom: 5px;">🔍</div>
+                  <div style="color: #ffc107; font-size: 14px;">No hospitals selected</div>
+                </div>
+            \`;
           }
-          
+
           mapHTML += \`
               </div>
             </div>
@@ -584,13 +666,24 @@ const EnhancedMapView: React.FC<Props> = ({
           }));
         }
 
-        // Load map
+        // Immediately try to load static map, then load Google Maps over it if available
+        initStaticMap();
+
+        // Also try to load Google Maps
         loadMap();
+
+        // Fallback timeout - if Google Maps doesn't load in 2 seconds, ensure static map is shown
+        setTimeout(() => {
+          if (!window.google || !window.google.maps) {
+            console.log('Google Maps load timeout, ensuring static fallback is visible');
+            initStaticMap();
+          }
+        }, 2000);
       </script>
       
       <script async defer 
-              src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=loadMap"
-              onerror="initStaticMap()">
+              src="https://maps.googleapis.com/maps/api/js?key=${CONFIG.GOOGLE_MAPS_API_KEY || 'DEMO_KEY'}&callback=loadMap"
+              onerror="console.log('Google Maps failed to load, using fallback'); initStaticMap();">
       </script>
     </body>
     </html>
@@ -600,12 +693,12 @@ const EnhancedMapView: React.FC<Props> = ({
   const handleWebViewMessage = (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      
+
       switch (data.type) {
         case 'map_loaded':
           setIsMapLoaded(true);
           break;
-          
+
         case 'hospital_selected':
           if (onHospitalPress) {
             const hospital = hospitals.find(h => h.id === data.hospitalId);
@@ -614,7 +707,7 @@ const EnhancedMapView: React.FC<Props> = ({
             }
           }
           break;
-          
+
         case 'location_button_pressed':
           if (onLocationPress) {
             onLocationPress();
@@ -647,7 +740,7 @@ const EnhancedMapView: React.FC<Props> = ({
     <View style={[styles.container, style]}>
       <WebView
         ref={webViewRef}
-        source={{ html: generateMapHTML() }}
+        source={{ html: mapHTML }}
         style={styles.webView}
         onMessage={handleWebViewMessage}
         javaScriptEnabled={true}
@@ -658,16 +751,18 @@ const EnhancedMapView: React.FC<Props> = ({
         bounces={false}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={false}
+        overScrollMode="never"
       />
-      
+
       {/* GPS Status Overlay */}
       {gpsStatus && (
         <View style={[styles.gpsStatusOverlay, { backgroundColor: getGPSStatusColor() }]}>
           <Text style={styles.gpsStatusText}>
             {!gpsStatus.hasPermission ? '🚫 No GPS Permission' :
-             !gpsStatus.locationServicesEnabled ? '📵 GPS Disabled' :
-             !gpsStatus.isTracking ? '⏸️ GPS Paused' :
-             '🛰️ GPS Active'}
+              !gpsStatus.locationServicesEnabled ? '📵 GPS Disabled' :
+                !gpsStatus.isTracking ? '⏸️ GPS Paused' :
+                  '🛰️ GPS Active'}
           </Text>
         </View>
       )}

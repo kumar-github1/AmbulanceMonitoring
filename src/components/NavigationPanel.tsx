@@ -294,7 +294,7 @@ const NavigationPanel: React.FC<Props> = ({
                         styles.signalStatus,
                         { backgroundColor: getSignalStatusColor(signal.status) }
                       ]}>
-                        <Ionicons name="traffic-cone" size={16} color="#fff" />
+                        <Ionicons name="warning" size={16} color="#fff" />
                       </View>
                       <View style={styles.signalContent}>
                         <Text style={styles.signalText}>
@@ -512,6 +512,12 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   summaryCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+  },
+  routeSummary: {
     backgroundColor: '#f8f9fa',
     borderRadius: 8,
     padding: 16,

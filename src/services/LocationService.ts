@@ -72,7 +72,7 @@ class LocationService {
     return new Promise((resolve) => {
       Geolocation.requestAuthorization(
         () => resolve(true),
-        (error) => {
+        (error: any) => {
           console.error('Location permission denied:', error);
           resolve(false);
         }
@@ -83,18 +83,18 @@ class LocationService {
   public getCurrentLocation(): Promise<Location> {
     return new Promise((resolve, reject) => {
       Geolocation.getCurrentPosition(
-        (position) => {
+        (position: any) => {
           const location: Location = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             accuracy: position.coords.accuracy,
             timestamp: position.timestamp,
           };
-          
+
           this.lastKnownLocation = location;
           resolve(location);
         },
-        (error) => {
+        (error: any) => {
           console.error('Get current location error:', error);
           
           if (this.lastKnownLocation) {
@@ -120,7 +120,7 @@ class LocationService {
 
     try {
       this.watchId = Geolocation.watchPosition(
-        (position) => {
+        (position: any) => {
           const location: Location = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
@@ -134,7 +134,7 @@ class LocationService {
             this.onLocationUpdate(location);
           }
         },
-        (error) => {
+        (error: any) => {
           console.error('Location tracking error:', error);
           
           if (this.onLocationError) {

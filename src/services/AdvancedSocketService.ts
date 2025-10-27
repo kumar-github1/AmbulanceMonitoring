@@ -93,12 +93,12 @@ interface QueuedEvent {
 
 export default class AdvancedSocketService {
   private static instance: AdvancedSocketService;
-  
+
   private socket: Socket | null = null;
   private serverUrl: string;
   private ambulanceId: string = '';
   private isInitialized: boolean = false;
-  
+
   // Connection management
   private connectionStatus: ConnectionStatus = {
     isConnected: false,
@@ -109,59 +109,59 @@ export default class AdvancedSocketService {
     serverLatency: null,
     queuedEvents: 0,
   };
-  
+
   // Offline queue
   private eventQueue: QueuedEvent[] = [];
   private readonly MAX_QUEUE_SIZE = 100;
   private readonly MAX_RETRY_ATTEMPTS = 3;
-  
+
   // Auto-sync timers
   private locationSyncInterval: NodeJS.Timeout | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private latencyCheckInterval: NodeJS.Timeout | null = null;
-  
+
   // Event callbacks
   private onConnectionChangeCallback?: (status: ConnectionStatus) => void;
   private onRouteCalculatedCallback?: (route: RouteCalculated) => void;
   private onSignalClearedCallback?: (signal: SignalCleared) => void;
   private onETAUpdateCallback?: (eta: ETAUpdate) => void;
   private onErrorCallback?: (error: string, details?: any) => void;
-  
+
   // Configuration
   private readonly EMERGENCY_SYNC_INTERVAL = 5000; // 5 seconds in emergency mode
   private readonly NORMAL_SYNC_INTERVAL = 30000; // 30 seconds in normal mode
   private readonly HEARTBEAT_INTERVAL = 15000; // 15 seconds
   private readonly LATENCY_CHECK_INTERVAL = 60000; // 1 minute
   private readonly RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 30000]; // Progressive delays
-  
+
   // Storage keys
   private readonly STORAGE_KEYS = {
     EVENT_QUEUE: 'socket_event_queue',
     CONNECTION_STATE: 'socket_connection_state',
     SERVER_CONFIG: 'socket_server_config',
   };
-  
+
   public static getInstance(): AdvancedSocketService {
     if (!AdvancedSocketService.instance) {
       AdvancedSocketService.instance = new AdvancedSocketService();
     }
     return AdvancedSocketService.instance;
   }
-  
+
   private constructor() {
     this.serverUrl = '';
   }
-  
+
   // Initialization
   public async initialize(serverUrl: string, ambulanceId: string): Promise<void> {
     try {
       this.serverUrl = serverUrl;
       this.ambulanceId = ambulanceId;
-      
+
       // Load offline queue and connection state
       await this.loadOfflineQueue();
       await this.loadConnectionState();
-      
+
       this.isInitialized = true;
       console.log('AdvancedSocketService initialized');
     } catch (error) {
@@ -169,55 +169,60 @@ export default class AdvancedSocketService {
       throw error;
     }
   }
-  
+
   // Connection Management
   public async connect(initialLocation?: LocationData): Promise<void> {
     if (!this.isInitialized) {
       throw new Error('SocketService not initialized. Call initialize() first.');
     }
-    
+
+    // Skip connection if in offline mode or empty URL
+    if (!this.serverUrl || this.serverUrl === 'offline') {
+      console.log('Skipping socket connection - offline mode');
+      return;
+    }
+
     if (this.socket?.connected) {
       console.log('Socket already connected');
       return;
     }
-    
+
     try {
       console.log(`Connecting to ${this.serverUrl}...`);
-      
+
       this.socket = io(this.serverUrl, {
         transports: ['websocket', 'polling'],
         timeout: 5000,
         reconnection: true,
-        reconnectionAttempts: 3,
+        reconnectionAttempts: 10,
         reconnectionDelay: this.RECONNECT_DELAYS[0],
         reconnectionDelayMax: 30000,
-        maxReconnectionAttempts: 10,
         query: {
           ambulanceId: this.ambulanceId,
           type: 'ambulance',
           version: '2.0',
         }
       });
-      
+
       this.setupEventListeners();
-      
+
       // Register ambulance after connection
       if (initialLocation) {
         this.socket.on('connect', () => {
           this.registerAmbulance(initialLocation);
         });
       }
-      
+
     } catch (error) {
       console.warn('Socket connection failed, continuing in offline mode:', error);
       this.handleError('Connection failed', error);
       // Don't throw error - allow app to continue in offline mode
     }
   }
-  
+
   private setupEventListeners(): void {
     if (!this.socket) return;
-    
+
     // Connection events
     this.socket.on('connect', () => {
       console.log('Socket connected successfully');
@@ -225,86 +230,86 @@ export default class AdvancedSocketService {
       this.connectionStatus.isReconnecting = false;
       this.connectionStatus.reconnectAttempts = 0;
       this.connectionStatus.lastConnected = Date.now();
-      
+
       this.startPeriodicTasks();
       this.processEventQueue();
       this.notifyConnectionChange();
     });
-    
+
     this.socket.on('disconnect', (reason) => {
       console.log('Socket disconnected:', reason);
       this.connectionStatus.isConnected = false;
       this.connectionStatus.isReconnecting = false;
-      
+
       this.stopPeriodicTasks();
       this.notifyConnectionChange();
     });
-    
+
     this.socket.on('reconnect_attempt', (attemptNumber) => {
       console.log(`Reconnection attempt ${attemptNumber}`);
       this.connectionStatus.isReconnecting = true;
       this.connectionStatus.reconnectAttempts = attemptNumber;
       this.notifyConnectionChange();
     });
-    
+
     this.socket.on('reconnect', (attemptNumber) => {
       console.log(`Reconnected after ${attemptNumber} attempts`);
       this.connectionStatus.reconnectAttempts = 0;
       this.processEventQueue();
     });
-    
+
     this.socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
       this.handleError('Connection error', error);
     });
-    
+
     // Application events
     this.socket.on('route-calculated', (data: RouteCalculated) => {
       console.log('Route calculated received:', data);
       this.connectionStatus.lastSyncTime = Date.now();
-      
+
       if (this.onRouteCalculatedCallback) {
         this.onRouteCalculatedCallback(data);
       }
     });
-    
+
     this.socket.on('signal-cleared', (data: SignalCleared) => {
       console.log('Signal cleared:', data);
       this.connectionStatus.lastSyncTime = Date.now();
-      
+
       if (this.onSignalClearedCallback) {
         this.onSignalClearedCallback(data);
       }
     });
-    
+
     this.socket.on('eta-update', (data: ETAUpdate) => {
       console.log('ETA update:', data);
       this.connectionStatus.lastSyncTime = Date.now();
-      
+
       if (this.onETAUpdateCallback) {
         this.onETAUpdateCallback(data);
       }
     });
-    
+
     this.socket.on('server-message', (message) => {
       console.log('Server message:', message);
       this.connectionStatus.lastSyncTime = Date.now();
     });
-    
+
     // Latency measurement
     this.socket.on('pong', (timestamp) => {
       const latency = Date.now() - timestamp;
       this.connectionStatus.serverLatency = latency;
       console.log(`Server latency: ${latency}ms`);
     });
-    
+
     // Error handling
     this.socket.on('error', (error) => {
       console.error('Socket error:', error);
       this.handleError('Socket error', error);
     });
   }
-  
+
   // Event Emission Methods
   public async registerAmbulance(initialLocation: LocationData): Promise<void> {
     const registration: AmbulanceRegistration = {
@@ -316,10 +321,10 @@ export default class AdvancedSocketService {
         version: '2.0',
       },
     };
-    
+
     await this.emit('register-ambulance', registration, 'high');
   }
-  
+
   public async updateLocation(location: LocationData, isEmergency: boolean = false): Promise<void> {
     const update: LocationUpdate = {
       ambulanceId: this.ambulanceId,
@@ -329,11 +334,11 @@ export default class AdvancedSocketService {
       speed: location.speed || undefined,
       heading: location.heading || undefined,
     };
-    
+
     const priority = isEmergency ? 'high' : 'medium';
     await this.emit('update-location', update, priority);
   }
-  
+
   public async requestEmergencyRoute(destination: EmergencyRoute['destination'], currentLocation: LocationData, priority: EmergencyRoute['priority'] = 'high'): Promise<void> {
     const request: EmergencyRoute = {
       ambulanceId: this.ambulanceId,
@@ -342,20 +347,20 @@ export default class AdvancedSocketService {
       priority,
       timestamp: Date.now(),
     };
-    
+
     await this.emit('emergency-route', request, 'high');
   }
-  
+
   public async sendHeartbeat(): Promise<void> {
     const heartbeat = {
       ambulanceId: this.ambulanceId,
       timestamp: Date.now(),
       status: 'active',
     };
-    
+
     await this.emit('heartbeat', heartbeat, 'low');
   }
-  
+
   // Generic emit with offline queue support
   private async emit(eventName: string, data: any, priority: 'high' | 'medium' | 'low' = 'medium'): Promise<void> {
     const event: QueuedEvent = {
@@ -366,12 +371,12 @@ export default class AdvancedSocketService {
       priority,
       retryCount: 0,
     };
-    
+
     if (this.socket?.connected) {
       try {
         this.socket.emit(eventName, data);
         console.log(`Emitted ${eventName}:`, data);
-        
+
         // Update sync time for successful emissions
         this.connectionStatus.lastSyncTime = Date.now();
       } catch (error) {
@@ -383,7 +388,7 @@ export default class AdvancedSocketService {
       await this.queueEvent(event);
     }
   }
-  
+
   // Offline Queue Management
   private async queueEvent(event: QueuedEvent): Promise<void> {
     try {
@@ -396,31 +401,31 @@ export default class AdvancedSocketService {
         }
         return a.timestamp - b.timestamp;
       });
-      
+
       // Limit queue size
       if (this.eventQueue.length > this.MAX_QUEUE_SIZE) {
         this.eventQueue = this.eventQueue.slice(0, this.MAX_QUEUE_SIZE);
         console.warn('Event queue size limit reached, oldest events removed');
       }
-      
+
       this.connectionStatus.queuedEvents = this.eventQueue.length;
       await this.saveOfflineQueue();
       this.notifyConnectionChange();
-      
+
     } catch (error) {
       console.error('Failed to queue event:', error);
     }
   }
-  
+
   private async processEventQueue(): Promise<void> {
     if (!this.socket?.connected || this.eventQueue.length === 0) {
       return;
     }
-    
+
     console.log(`Processing ${this.eventQueue.length} queued events...`);
     const eventsToProcess = [...this.eventQueue];
     this.eventQueue = [];
-    
+
     for (const event of eventsToProcess) {
       try {
         if (event.retryCount < this.MAX_RETRY_ATTEMPTS) {
@@ -435,19 +440,19 @@ export default class AdvancedSocketService {
         this.eventQueue.push(event);
       }
     }
-    
+
     this.connectionStatus.queuedEvents = this.eventQueue.length;
     await this.saveOfflineQueue();
     this.notifyConnectionChange();
   }
-  
+
   // Periodic Tasks
   private startPeriodicTasks(): void {
     // Heartbeat
     this.heartbeatInterval = setInterval(() => {
       this.sendHeartbeat();
     }, this.HEARTBEAT_INTERVAL);
-    
+
     // Latency check
     this.latencyCheckInterval = setInterval(() => {
       if (this.socket?.connected) {
@@ -455,55 +460,55 @@ export default class AdvancedSocketService {
       }
     }, this.LATENCY_CHECK_INTERVAL);
   }
-  
+
   private stopPeriodicTasks(): void {
     if (this.locationSyncInterval) {
       clearInterval(this.locationSyncInterval);
       this.locationSyncInterval = null;
     }
-    
+
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
-    
+
     if (this.latencyCheckInterval) {
       clearInterval(this.latencyCheckInterval);
       this.latencyCheckInterval = null;
     }
   }
-  
+
   // Emergency Mode Location Sync
   public startEmergencyLocationSync(getCurrentLocation: () => LocationData | null): void {
     if (this.locationSyncInterval) {
       clearInterval(this.locationSyncInterval);
     }
-    
+
     this.locationSyncInterval = setInterval(() => {
       const location = getCurrentLocation();
       if (location) {
         this.updateLocation(location, true);
       }
     }, this.EMERGENCY_SYNC_INTERVAL);
-    
+
     console.log('Emergency location sync started (5s interval)');
   }
-  
+
   public startNormalLocationSync(getCurrentLocation: () => LocationData | null): void {
     if (this.locationSyncInterval) {
       clearInterval(this.locationSyncInterval);
     }
-    
+
     this.locationSyncInterval = setInterval(() => {
       const location = getCurrentLocation();
       if (location) {
         this.updateLocation(location, false);
       }
     }, this.NORMAL_SYNC_INTERVAL);
-    
+
     console.log('Normal location sync started (30s interval)');
   }
-  
+
   public stopLocationSync(): void {
     if (this.locationSyncInterval) {
       clearInterval(this.locationSyncInterval);
@@ -511,19 +516,19 @@ export default class AdvancedSocketService {
       console.log('Location sync stopped');
     }
   }
-  
+
   // Manual Controls
   public async manualReconnect(): Promise<void> {
     if (this.socket) {
       this.socket.disconnect();
     }
-    
+
     // Wait a moment before reconnecting
     setTimeout(() => {
       this.connect();
     }, 1000);
   }
-  
+
   public async clearEventQueue(): Promise<void> {
     this.eventQueue = [];
     this.connectionStatus.queuedEvents = 0;
@@ -531,24 +536,24 @@ export default class AdvancedSocketService {
     this.notifyConnectionChange();
     console.log('Event queue cleared');
   }
-  
+
   // State Management
   public getConnectionStatus(): ConnectionStatus {
     return { ...this.connectionStatus };
   }
-  
+
   public isConnected(): boolean {
     return this.socket?.connected || false;
   }
-  
+
   public getServerUrl(): string {
     return this.serverUrl;
   }
-  
+
   public getAmbulanceId(): string {
     return this.ambulanceId;
   }
-  
+
   // Persistence
   private async saveOfflineQueue(): Promise<void> {
     try {
@@ -560,7 +565,7 @@ export default class AdvancedSocketService {
       console.error('Failed to save event queue:', error);
     }
   }
-  
+
   private async loadOfflineQueue(): Promise<void> {
     try {
       const queueData = await AsyncStorage.getItem(this.STORAGE_KEYS.EVENT_QUEUE);
@@ -574,7 +579,7 @@ export default class AdvancedSocketService {
       this.eventQueue = [];
     }
   }
-  
+
   private async saveConnectionState(): Promise<void> {
     try {
       await AsyncStorage.setItem(
@@ -588,7 +593,7 @@ export default class AdvancedSocketService {
       console.error('Failed to save connection state:', error);
     }
   }
-  
+
   private async loadConnectionState(): Promise<void> {
     try {
       const stateData = await AsyncStorage.getItem(this.STORAGE_KEYS.CONNECTION_STATE);
@@ -601,75 +606,75 @@ export default class AdvancedSocketService {
       console.error('Failed to load connection state:', error);
     }
   }
-  
+
   // Event Callbacks
   public setOnConnectionChangeCallback(callback: (status: ConnectionStatus) => void): void {
     this.onConnectionChangeCallback = callback;
   }
-  
+
   public setOnRouteCalculatedCallback(callback: (route: RouteCalculated) => void): void {
     this.onRouteCalculatedCallback = callback;
   }
-  
+
   public setOnSignalClearedCallback(callback: (signal: SignalCleared) => void): void {
     this.onSignalClearedCallback = callback;
   }
-  
+
   public setOnETAUpdateCallback(callback: (eta: ETAUpdate) => void): void {
     this.onETAUpdateCallback = callback;
   }
-  
+
   public setOnErrorCallback(callback: (error: string, details?: any) => void): void {
     this.onErrorCallback = callback;
   }
-  
+
   // Internal Methods
   private notifyConnectionChange(): void {
     this.saveConnectionState();
-    
+
     if (this.onConnectionChangeCallback) {
       this.onConnectionChangeCallback(this.getConnectionStatus());
     }
   }
-  
+
   private handleError(error: string, details?: any): void {
     console.error('SocketService error:', error, details);
-    
+
     if (this.onErrorCallback) {
       this.onErrorCallback(error, details);
     }
   }
-  
+
   // Cleanup
   public async disconnect(): Promise<void> {
     console.log('Disconnecting socket service...');
-    
+
     this.stopPeriodicTasks();
-    
+
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
-    
+
     this.connectionStatus.isConnected = false;
     this.connectionStatus.isReconnecting = false;
-    
+
     await this.saveConnectionState();
     await this.saveOfflineQueue();
-    
+
     this.notifyConnectionChange();
   }
-  
+
   public async dispose(): Promise<void> {
     await this.disconnect();
-    
+
     // Clear callbacks
     this.onConnectionChangeCallback = undefined;
     this.onRouteCalculatedCallback = undefined;
     this.onSignalClearedCallback = undefined;
     this.onETAUpdateCallback = undefined;
     this.onErrorCallback = undefined;
-    
+
     console.log('SocketService disposed');
   }
 }

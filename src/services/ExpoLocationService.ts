@@ -90,10 +90,9 @@ class ExpoLocationService {
       }
 
       const location = await Location.getCurrentPositionAsync({
-        accuracy: this.options.enableHighAccuracy 
-          ? Location.Accuracy.High 
+        accuracy: this.options.enableHighAccuracy
+          ? Location.Accuracy.High
           : Location.Accuracy.Balanced,
-        maximumAge: this.options.maximumAge,
       });
 
       const locationData: LocationData = {
