@@ -13,6 +13,7 @@ import EnhancedMapView from '../components/EnhancedMapView';
 import MapDebugView from '../components/MapDebugView';
 import GoogleMapsTestComponent from '../components/GoogleMapsTestComponent';
 import ConnectionStatusIndicator from '../components/ConnectionStatusIndicator';
+import PiConnectionIndicator from '../components/PiConnectionIndicator';
 import HospitalSelectionBottomSheet from '../components/HospitalSelectionBottomSheet';
 import NavigationPanel from '../components/NavigationPanel';
 import EmergencyControls from '../components/EmergencyControls';
@@ -173,15 +174,13 @@ const MainMapScreen: React.FC<Props> = ({ navigation }) => {
             locationData.heading || 0
           );
 
-          // Update traffic signals based on ambulance location
           try {
             const nearbySignals = await trafficSignalService.current.getNearbySignals(locationData, 2.0);
 
-            // Activate emergency mode for signals within 200m during emergency
-            if (isEmergencyActive) {
+            if (isEmergencyActive && locationData.heading !== undefined) {
               nearbySignals.forEach(signal => {
-                if (signal.ambulanceProximity && signal.ambulanceProximity <= 200) {
-                  trafficSignalService.current.activateEmergencyMode(signal);
+                if (signal.ambulanceProximity && signal.ambulanceProximity <= 500) {
+                  trafficSignalService.current.activateEmergencyMode(signal, locationData.heading);
                 }
               });
             }
@@ -586,6 +585,11 @@ const MainMapScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       )}
 
+      {/* Raspberry Pi Connection Status */}
+      <View style={[styles.piContainer, { marginTop: isEmergencyActive ? 60 : 0 }]} pointerEvents="box-none">
+        <PiConnectionIndicator />
+      </View>
+
       {/* Current Route Info */}
       {currentRoute && isNavigating && !isEmergencyActive && (
         <View style={styles.routeInfoContainer}>
@@ -755,6 +759,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 110,
     left: 16,
+  },
+  piContainer: {
+    position: 'absolute',
+    top: 110,
+    right: 16,
   },
   gpsStatus: {
     flexDirection: 'row',

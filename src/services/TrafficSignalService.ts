@@ -1,5 +1,7 @@
 import { Location } from './HospitalService';
 import { LocationData } from './GPSService';
+import { updateSignalDirection, getAmbulanceDirection, checkConnection } from './RaspberryPiService';
+import { getApiBaseUrl } from '../config/piConfig';
 
 // Enhanced traffic signal interface with RYG status
 export interface TrafficSignal {
@@ -30,65 +32,8 @@ class TrafficSignalService {
     private signals: TrafficSignal[] = [];
     private updateInterval: NodeJS.Timeout | null = null;
     private onSignalsUpdatedCallback?: (signals: TrafficSignal[]) => void;
-
-    // Mock traffic signals for realistic testing (positioned around a city area)
-    private readonly MOCK_SIGNALS: TrafficSignal[] = [
-        {
-            id: 'signal_001',
-            location: { latitude: 12.9716, longitude: 77.5946 }, // Bangalore
-            currentLight: 'red',
-            emergencyOverride: false,
-            normalCycle: { red: 45, yellow: 5, green: 30 },
-            countdown: 25,
-            type: 'intersection',
-            direction: 'north_south',
-            status: 'normal'
-        },
-        {
-            id: 'signal_002',
-            location: { latitude: 12.9726, longitude: 77.5956 },
-            currentLight: 'green',
-            emergencyOverride: false,
-            normalCycle: { red: 40, yellow: 5, green: 35 },
-            countdown: 18,
-            type: 'intersection',
-            direction: 'east_west',
-            status: 'normal'
-        },
-        {
-            id: 'signal_003',
-            location: { latitude: 12.9696, longitude: 77.5936 },
-            currentLight: 'yellow',
-            emergencyOverride: false,
-            normalCycle: { red: 50, yellow: 4, green: 26 },
-            countdown: 2,
-            type: 'intersection',
-            direction: 'all_directions',
-            status: 'normal'
-        },
-        {
-            id: 'signal_004',
-            location: { latitude: 12.9756, longitude: 77.5976 },
-            currentLight: 'red',
-            emergencyOverride: false,
-            normalCycle: { red: 35, yellow: 5, green: 30 },
-            countdown: 12,
-            type: 'pedestrian',
-            direction: 'north_south',
-            status: 'normal'
-        },
-        {
-            id: 'signal_005',
-            location: { latitude: 12.9686, longitude: 77.5986 },
-            currentLight: 'green',
-            emergencyOverride: false,
-            normalCycle: { red: 42, yellow: 6, green: 32 },
-            countdown: 8,
-            type: 'highway_merge',
-            direction: 'east_west',
-            status: 'normal'
-        }
-    ];
+    private apiBaseUrl: string = getApiBaseUrl();
+    private useApiData: boolean = true;
 
     public static getInstance(): TrafficSignalService {
         if (!TrafficSignalService.instance) {
@@ -98,20 +43,39 @@ class TrafficSignalService {
     }
 
     private constructor() {
-        this.signals = [...this.MOCK_SIGNALS];
+        this.initializeSignals();
+    }
+
+    private async initializeSignals() {
+        console.log('🔧 TrafficSignalService initializing...');
+        const connected = await checkConnection();
+        if (connected) {
+            console.log('🔗 Raspberry Pi connected, fetching signals...');
+            const apiSignals = await this.fetchSignalsFromAPI();
+            if (apiSignals.length > 0) {
+                this.signals = apiSignals;
+                console.log(`✅ Loaded ${apiSignals.length} signals from Pi:`, apiSignals.map(s => s.id));
+            } else {
+                console.warn('⚠️  No signals returned from Pi API');
+            }
+        } else {
+            console.warn('⚠️  Raspberry Pi not connected, using empty signal list');
+        }
         this.startSimulation();
     }
 
-    /**
-     * Get nearby traffic signals within specified radius
-     */
     public async getNearbySignals(
         location: LocationData,
         radiusKm: number = 2.0
     ): Promise<TrafficSignal[]> {
         try {
-            // In a real app, this would call an API
-            // For now, calculate distance to mock signals
+            if (this.signals.length === 0) {
+                const apiSignals = await this.fetchSignalsFromAPI();
+                if (apiSignals.length > 0) {
+                    this.signals = apiSignals;
+                }
+            }
+
             const nearbySignals = this.signals.filter(signal => {
                 const distance = this.calculateDistance(
                     location.latitude,
@@ -120,15 +84,11 @@ class TrafficSignalService {
                     signal.location.longitude
                 );
 
-                // Update proximity for each signal
-                signal.ambulanceProximity = distance * 1000; // convert to meters
-
+                signal.ambulanceProximity = distance * 1000;
                 return distance <= radiusKm;
             });
 
-            // Sort by distance
             nearbySignals.sort((a, b) => (a.ambulanceProximity || 0) - (b.ambulanceProximity || 0));
-
             return nearbySignals;
         } catch (error) {
             console.error('Error getting nearby signals:', error);
@@ -168,32 +128,21 @@ class TrafficSignalService {
         }, 1000); // Update every second
     }
 
-    /**
-     * Update traffic light states and countdowns
-     */
     private updateTrafficLights(): void {
         this.signals.forEach(signal => {
             if (signal.emergencyOverride) {
-                // Keep signal green for ambulance
                 signal.currentLight = 'green';
-                signal.countdown = 60; // Extended green time
+                signal.countdown = 60;
                 return;
             }
 
-            // Normal traffic light cycle
             signal.countdown--;
 
             if (signal.countdown <= 0) {
                 this.transitionToNextLight(signal);
             }
-
-            // Check if ambulance is approaching (within 200m) and switch to emergency mode
-            if (signal.ambulanceProximity && signal.ambulanceProximity <= 200 && !signal.emergencyOverride) {
-                this.activateEmergencyMode(signal);
-            }
         });
 
-        // Notify listeners
         if (this.onSignalsUpdatedCallback) {
             this.onSignalsUpdatedCallback([...this.signals]);
         }
@@ -219,46 +168,75 @@ class TrafficSignalService {
         }
     }
 
-    /**
-     * Activate emergency mode for approaching ambulance
-     */
-    public activateEmergencyMode(signal: TrafficSignal): void {
-        if (signal.emergencyOverride) return;
+    public async activateEmergencyMode(signal: TrafficSignal, ambulanceHeading?: number): Promise<void> {
+        if (signal.emergencyOverride) {
+            console.log(`🚦 Signal ${signal.id} already in emergency mode`);
+            return;
+        }
+
+        if (ambulanceHeading === undefined) {
+            console.log(`🚦 Skipping signal ${signal.id} - no heading information`);
+            return;
+        }
+
+        const ambulanceDirection = getAmbulanceDirection(ambulanceHeading);
+
+        const shouldActivate = signal.direction === 'all_directions' ||
+            signal.direction === ambulanceDirection;
+
+        if (!shouldActivate) {
+            console.log(`🚦 Signal ${signal.id} not in ambulance path (signal: ${signal.direction}, ambulance: ${ambulanceDirection})`);
+            return;
+        }
 
         signal.emergencyOverride = true;
         signal.status = 'emergency_mode';
 
-        // Immediately switch to green for ambulance
+        console.log(`🚨 Activating emergency mode for ${signal.id} [${ambulanceDirection}]`);
+
         if (signal.currentLight !== 'green') {
             signal.currentLight = 'yellow';
-            signal.countdown = 3; // Quick transition
+            signal.countdown = 3;
 
-            setTimeout(() => {
-                signal.currentLight = 'green';
-                signal.countdown = 60; // Extended green time
-                signal.status = 'cleared_for_ambulance';
-            }, 3000);
+            const success = await updateSignalDirection(signal.id, ambulanceDirection, 'green');
+
+            if (success) {
+                setTimeout(() => {
+                    signal.currentLight = 'green';
+                    signal.countdown = 60;
+                    signal.status = 'cleared_for_ambulance';
+                    console.log(`✅ Signal ${signal.id} cleared for ambulance`);
+                }, 3000);
+            } else {
+                console.error(`❌ Failed to activate signal ${signal.id}`);
+                signal.emergencyOverride = false;
+                signal.status = 'normal';
+            }
         } else {
-            signal.countdown = Math.max(signal.countdown, 60); // Extend green time
+            signal.countdown = Math.max(signal.countdown, 60);
             signal.status = 'cleared_for_ambulance';
-        }
+            const success = await updateSignalDirection(signal.id, ambulanceDirection, 'green');
 
-        console.log(`🚦 Emergency mode activated for signal ${signal.id}`);
+            if (!success) {
+                console.error(`❌ Failed to maintain green for signal ${signal.id}`);
+            }
+        }
     }
 
     /**
      * Deactivate emergency mode and return to normal cycle
      */
-    public deactivateEmergencyMode(signalId: string): void {
+    public async deactivateEmergencyMode(signalId: string): Promise<void> {
         const signal = this.signals.find(s => s.id === signalId);
         if (!signal) return;
 
         signal.emergencyOverride = false;
         signal.status = 'normal';
 
-        // Resume normal cycle
         signal.currentLight = 'yellow';
         signal.countdown = signal.normalCycle.yellow;
+
+        await updateSignalDirection(signal.id, signal.direction, 'red');
 
         console.log(`🚦 Emergency mode deactivated for signal ${signalId}`);
     }
@@ -274,14 +252,11 @@ class TrafficSignalService {
         });
     }
 
-    /**
-     * Manual signal override for emergency vehicles
-     */
-    public manualOverride(signalId: string): void {
+    public async manualOverride(signalId: string, ambulanceHeading?: number): Promise<void> {
         const signal = this.signals.find(s => s.id === signalId);
         if (!signal) return;
 
-        this.activateEmergencyMode(signal);
+        await this.activateEmergencyMode(signal, ambulanceHeading);
     }
 
     /**
@@ -315,22 +290,23 @@ class TrafficSignalService {
         }
     }
 
-    /**
-     * API call to get real traffic signals (for production)
-     */
-    private async fetchTrafficSignalsFromAPI(
-        latitude: number,
-        longitude: number,
-        radius: number
-    ): Promise<TrafficAPIResponse> {
+    private async fetchSignalsFromAPI(): Promise<TrafficSignal[]> {
+        if (!this.useApiData) {
+            console.log('🔧 API data disabled, returning empty array');
+            return [];
+        }
+
         try {
-            // This would be your actual API call
-            const response = await fetch(`/api/traffic-signals?lat=${latitude}&lng=${longitude}&radius=${radius}`);
-            const data = await response.json();
-            return data;
+            console.log(`🌐 Fetching signals from: ${this.apiBaseUrl}/signals`);
+            const response = await fetch(`${this.apiBaseUrl}/signals`);
+            if (!response.ok) throw new Error('API request failed');
+
+            const data: TrafficAPIResponse = await response.json();
+            console.log('📡 Raw API response:', data);
+            return data.signals || [];
         } catch (error) {
-            console.error('Error fetching traffic signals from API:', error);
-            return { success: false, error: 'API call failed' };
+            console.error('❌ Error fetching signals from API:', error);
+            return [];
         }
     }
 }

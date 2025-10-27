@@ -16,6 +16,7 @@ import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
+import * as RaspberryPiService from '../services/RaspberryPiService';
 
 interface LocationData {
   latitude: number;
@@ -63,8 +64,8 @@ const SimpleMapScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedHospital, setSelectedHospital] = useState<Hospital | null>(null);
   const [nearbyHospitals, setNearbyHospitals] = useState<Hospital[]>([]);
-  const [hospitalCache, setHospitalCache] = useState<{[key: string]: Hospital[]}>({});
-  const [routeCoordinates, setRouteCoordinates] = useState<{latitude: number, longitude: number}[]>([]);
+  const [hospitalCache, setHospitalCache] = useState<{ [key: string]: Hospital[] }>({});
+  const [routeCoordinates, setRouteCoordinates] = useState<{ latitude: number, longitude: number }[]>([]);
   const [trafficSignals, setTrafficSignals] = useState<TrafficSignal[]>([]);
   const [simulationState, setSimulationState] = useState<SimulationState>({
     isSimulating: false,
@@ -74,7 +75,7 @@ const SimpleMapScreen: React.FC = () => {
     estimatedTimeArrival: 0,
     simulatedSpeed: 80, // 80 km/h emergency speed
   });
-  const [simulatedLocation, setSimulatedLocation] = useState<{latitude: number, longitude: number} | null>(null);
+  const [simulatedLocation, setSimulatedLocation] = useState<{ latitude: number, longitude: number } | null>(null);
 
   useEffect(() => {
     initializeLocation();
@@ -95,10 +96,10 @@ const SimpleMapScreen: React.FC = () => {
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a =
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
 
@@ -389,7 +390,7 @@ const SimpleMapScreen: React.FC = () => {
     return poly;
   };
 
-  const findTrafficSignalsAlongRoute = async (route: {latitude: number, longitude: number}[]) => {
+  const findTrafficSignalsAlongRoute = async (route: { latitude: number, longitude: number }[]) => {
     if (route.length === 0) return;
 
     try {
@@ -459,8 +460,8 @@ const SimpleMapScreen: React.FC = () => {
     }
   };
 
-  const sampleRoutePoints = (route: {latitude: number, longitude: number}[], intervalMeters: number) => {
-    const points: {latitude: number, longitude: number}[] = [];
+  const sampleRoutePoints = (route: { latitude: number, longitude: number }[], intervalMeters: number) => {
+    const points: { latitude: number, longitude: number }[] = [];
     let accumulatedDistance = 0;
 
     for (let i = 0; i < route.length - 1; i++) {
@@ -482,7 +483,7 @@ const SimpleMapScreen: React.FC = () => {
     return points;
   };
 
-  const calculateRouteDistanceToPoint = (route: {latitude: number, longitude: number}[], targetPoint: {lat: number, lng: number}) => {
+  const calculateRouteDistanceToPoint = (route: { latitude: number, longitude: number }[], targetPoint: { lat: number, lng: number }) => {
     let minDistance = Infinity;
     let routeDistance = 0;
     let bestRouteDistance = 0;
@@ -511,7 +512,7 @@ const SimpleMapScreen: React.FC = () => {
     return bestRouteDistance;
   };
 
-  const generateMockSignalsAlongRoute = (route: {latitude: number, longitude: number}[]): TrafficSignal[] => {
+  const generateMockSignalsAlongRoute = (route: { latitude: number, longitude: number }[]): TrafficSignal[] => {
     const signals: TrafficSignal[] = [];
     const routeLength = route.length;
 
@@ -538,7 +539,7 @@ const SimpleMapScreen: React.FC = () => {
     return signals;
   };
 
-  const calculateTotalRouteDistance = (route: {latitude: number, longitude: number}[]): number => {
+  const calculateTotalRouteDistance = (route: { latitude: number, longitude: number }[]): number => {
     let totalDistance = 0;
     for (let i = 0; i < route.length - 1; i++) {
       totalDistance += calculateDistance(
@@ -547,6 +548,47 @@ const SimpleMapScreen: React.FC = () => {
       );
     }
     return totalDistance;
+  };
+
+  // Pi Signal Integration: Map simulation signals to real Pi signals
+  const mapToPiSignal = (simulationSignalId: string): string | null => {
+    // Map simulation mock signals to Pi signal IDs
+    if (simulationSignalId.includes('mock_signal_0') || simulationSignalId.includes('NORTH')) {
+      return 'NORTH';
+    }
+    if (simulationSignalId.includes('mock_signal_1') || simulationSignalId.includes('EAST')) {
+      return 'EAST';
+    }
+    if (simulationSignalId.includes('mock_signal_2') || simulationSignalId.includes('SOUTH')) {
+      return 'SOUTH';
+    }
+    // Direct mapping for Pi signals
+    if (['NORTH', 'EAST', 'SOUTH'].includes(simulationSignalId)) {
+      return simulationSignalId;
+    }
+    return null; // Unknown signal
+  };
+
+  // Send signal control command to Raspberry Pi
+  const controlPiSignal = async (simulationSignalId: string, status: 'green' | 'red') => {
+    const piSignalId = mapToPiSignal(simulationSignalId);
+    if (!piSignalId) {
+      console.log(`⚠️  No Pi mapping for signal: ${simulationSignalId}`);
+      return false;
+    }
+
+    try {
+      const success = await RaspberryPiService.updateSignal(piSignalId, status);
+      if (success) {
+        console.log(`🔗 Pi signal ${piSignalId} → ${status.toUpperCase()} (triggered by ${simulationSignalId})`);
+      } else {
+        console.log(`❌ Pi signal ${piSignalId} control failed`);
+      }
+      return success;
+    } catch (error) {
+      console.error(`❌ Pi signal ${piSignalId} error:`, error);
+      return false;
+    }
   };
 
   const getRandomSignalStatus = (): 'red' | 'green' | 'yellow' | 'unknown' => {
@@ -643,7 +685,7 @@ const SimpleMapScreen: React.FC = () => {
     }
   }, [simulationState.isSimulating, routeCoordinates.length]);
 
-  // Smart traffic signal control
+  // Smart traffic signal control with Pi integration
   useEffect(() => {
     if (simulationState.isSimulating && simulatedLocation && trafficSignals.length > 0) {
       setTrafficSignals(prevSignals =>
@@ -658,6 +700,10 @@ const SimpleMapScreen: React.FC = () => {
           // If ambulance is within 300m of signal, turn it green
           if (distanceToSignal <= 300 && !signal.isControlled) {
             console.log(`🚦 Signal ${signal.id} turned GREEN - Ambulance approaching (${distanceToSignal.toFixed(0)}m away)`);
+
+            // 🔗 Send GREEN command to Raspberry Pi
+            controlPiSignal(signal.id, 'green');
+
             return {
               ...signal,
               status: 'green' as const,
@@ -669,6 +715,10 @@ const SimpleMapScreen: React.FC = () => {
           // If ambulance has passed the signal (more than 150m behind), release control and turn red
           if (signal.isControlled && distanceToSignal > 150) {
             console.log(`🚦 Signal ${signal.id} turned RED - Ambulance passed (${distanceToSignal.toFixed(0)}m away)`);
+
+            // 🔗 Send RED command to Raspberry Pi
+            controlPiSignal(signal.id, 'red');
+
             return {
               ...signal,
               status: 'red' as const, // Turn back to RED after ambulance passes
@@ -682,6 +732,35 @@ const SimpleMapScreen: React.FC = () => {
       );
     }
   }, [simulatedLocation, simulationState.isSimulating]);
+
+  // Emergency completion - Reset Pi signals when simulation ends
+  useEffect(() => {
+    if (isEmergencyActive && !simulationState.isSimulating && simulationState.progress >= 1) {
+      console.log('🎯 Emergency simulation completed - Resetting Pi signals to normal');
+
+      // Reset all Pi signals to red (normal state)
+      Promise.all([
+        controlPiSignal('NORTH', 'red'),
+        controlPiSignal('EAST', 'red'),
+        controlPiSignal('SOUTH', 'red')
+      ]).then(() => {
+        console.log('✅ All Pi signals reset to normal state');
+
+        // Show completion alert
+        Alert.alert(
+          'Emergency Complete',
+          `🎯 Ambulance arrived at ${selectedHospital?.name}!\n🔗 Pi signals returned to normal operation`,
+          [{ text: 'OK', style: 'default' }]
+        );
+
+        // Reset emergency state after delay
+        setTimeout(() => {
+          setIsEmergencyActive(false);
+          setSelectedHospital(null);
+        }, 3000);
+      });
+    }
+  }, [isEmergencyActive, simulationState.isSimulating, simulationState.progress, selectedHospital?.name]);
 
   // Keep non-controlled signals mostly red (like real traffic lights during emergency)
   useEffect(() => {
@@ -735,6 +814,14 @@ const SimpleMapScreen: React.FC = () => {
     // Get route to hospital
     await getRoute(hospital);
 
+    // 🔗 Initialize Pi signals to RED for emergency mode
+    console.log('🚨 Emergency mode activated - Setting all Pi signals to RED');
+    await Promise.all([
+      controlPiSignal('NORTH', 'red'),
+      controlPiSignal('EAST', 'red'),
+      controlPiSignal('SOUTH', 'red')
+    ]);
+
     // Start simulation
     const totalDistance = hospital.distance || 0;
     setSimulationState({
@@ -756,7 +843,7 @@ const SimpleMapScreen: React.FC = () => {
 
     Alert.alert(
       'Emergency Activated',
-      `🚨 Emergency simulation started!\nDestination: ${hospital.name}\nDistance: ${hospital.distance?.toFixed(1)} km\n\n📍 Ambulance speed: 80 km/h\n🚦 Signals: RED → GREEN at 300m → RED after passing`,
+      `🚨 Emergency simulation started!\nDestination: ${hospital.name}\nDistance: ${hospital.distance?.toFixed(1)} km\n\n📍 Ambulance speed: 80 km/h\n🚦 Signals: RED → GREEN at 300m → RED after passing\n🔗 Pi signals synchronized`,
       [
         { text: 'OK', style: 'default' },
         {
